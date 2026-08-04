@@ -1,0 +1,10 @@
+{
+    "blend": { "func": "add", "srcrgb": "srcalpha", "dstrgb": "1-srcalpha" },
+    "vertex": "position_tex_color",
+    "fragment": "position_tex_color",
+    "attributes": [ "Position", "UV0", "Color" ],
+    "samplers": [ { "name": "Sampler0" } ],
+    "uniforms": [
+        { "name": "ColorModulator", "type": "float", "count": 4, "values": [ 1.0, 1.0, 1.0, 1.0 ] }
+    ]
+}

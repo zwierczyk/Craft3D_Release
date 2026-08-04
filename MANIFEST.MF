@@ -1,0 +1,4 @@
+Manifest-Version: 1.0
+Main-Class: craft3dgl.MinecraftGL
+Class-Path: lib/lwjgl.jar lib/lwjgl-glfw.jar lib/lwjgl-opengl.jar lib/lwjgl-natives-windows.jar lib/lwjgl-glfw-natives-windows.jar lib/lwjgl-opengl-natives-windows.jar lib/lwjgl-natives-linux.jar lib/lwjgl-glfw-natives-linux.jar lib/lwjgl-opengl-natives-linux.jar lib/lwjgl-natives-macos.jar lib/lwjgl-glfw-natives-macos.jar lib/lwjgl-opengl-natives-macos.jar lib/lwjgl-natives-macos-arm64.jar lib/lwjgl-glfw-natives-macos-arm64.jar lib/lwjgl-opengl-natives-macos-arm64.jar
+

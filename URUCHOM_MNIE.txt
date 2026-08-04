@@ -1,0 +1,98 @@
+================================================================
+  CRAFT3D - Voxel Survival (Dark Neon Edition)  v2.2
+  Jak uruchomic gre
+================================================================
+
+KROK 1: Zainstaluj Jave (https://adoptium.net/)
+KROK 2: Dwuklik start_windows.bat (Win) lub ./start_linux_mac.sh
+
+==================================================================
+                CO NOWEGO w v2.2 - DARK NEON REDESIGN!
+==================================================================
+
+NOWY STYL GRAFIKI - DARK NEON
+----------------------------------------------------------------
+  * Ciemne granatowe panele UI z pol-przezroczystoscia
+  * NEON RAMKI (cyjan) wokol paneli i slotow - swiecace!
+  * FIOLETOWY neon dla wybranego slotu w hotbarze (z glow)
+  * CYJAN glow dla hover na slotach
+  * Corner accents (kwadraciki w rogach panelu jak w cyberpunk UI)
+  * Neon text z halo (cyjan poswiate) dla tytulow paneli
+
+LEPSZE TEKSTURY BLOKOW
+----------------------------------------------------------------
+  * TRAWA: kwiatki (biale stokrotki, czerwone maki, zolte mniszki)
+  * KAMIEN: rudy wegla (ciemne kropki), zelaza (pomaranczowe),
+    plus pekniecia
+  * DREWNO: lepsze slojki + dodatkowy sek
+  * DESKI: metalowe nity w rogach + lepsze pasy podzialu
+  * PIASEK: falki wydm + male drobinki (kamyki)
+  * ZIEMIA: kamyczki + korzenie
+
+PIEKNY HUD
+----------------------------------------------------------------
+  * SERCA: czerwony gradient + neon glow + highlight
+    (jasny top -> ciemny dol, jak realny)
+  * GLOD: pomaranczowy gradient + neon halo
+  * ZBROJA: srebrny gradient z cyjan glow
+  * XP BAR: zielony gradient z neon glow, ramka czarna
+  * VIGNETTE: ciemne rogi ekranu dla immersji
+
+NEON BUTTONY
+----------------------------------------------------------------
+  * Gradient tla (granatowy -> ciemniejszy)
+  * Cyjan neon ramka z glow (2 warstwy)
+  * Corner accents (jasne kwadraciki w rogach)
+  * Death screen buttony - czerwony neon (dla podkreslenia)
+
+
+STEROWANIE (jak dawniej)
+----------------------------------------------------------------
+  WASD - ruch
+  Space - skok / w gore (lot)
+  Shift - sprint / w dol
+  Ctrl - szybki sprint (lot)
+  LPM - kop/atakuj
+  PPM - postaw/interakcja/handluj (w creative: pick block)
+  MMB - PICK BLOCK
+  1-9 lub scroll - hotbar
+  E - inventory
+  Q - wyrzuc (Shift+Q = caly stack)
+  T / "/" - chat
+  F5 - kamera 1st/3rd person
+  M - wycisz dzwiek
+  ESC - menu pauzy
+  Space x2 creative - lot ON/OFF
+
+
+KOMENDY CHATU
+----------------------------------------------------------------
+  /gamemode c - creative
+  /gamemode s - survival
+  /fly - lot ON/OFF
+  /tp X Y Z - teleport
+  /give NAZWA N - daj przedmiot
+  /rebuild - przebuduj wioski
+  /help - pomoc
+
+
+ROLNICTWO (z v1.3)
+----------------------------------------------------------------
+  1. Zniszcz trawke -> nasiona (30% szans)
+  2. Zrob motyke (2 deski + 2 kije, jak siekiera)
+  3. PPM motyka na ziemie -> pole uprawne
+  4. PPM nasiona na pole -> pszenica
+  5. Poczekaj az dojrzeje (zlota)
+  6. LPM = wheat + nasiona
+  7. 3 wheat w rzedzie -> chleb
+  8. 20 wheat u villagera -> 1 szmaragd!
+
+
+PROBLEMY?
+----------------------------------------------------------------
+  "java: nie jest rozpoznawany" -> zainstaluj Jave
+  Crash -> sprawdz logs/crash.log
+
+================================================================
+                       Milej gry!
+================================================================

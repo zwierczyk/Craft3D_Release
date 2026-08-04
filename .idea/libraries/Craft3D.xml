@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="Craft3D">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/Craft3D.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

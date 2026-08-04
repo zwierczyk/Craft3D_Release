@@ -1,0 +1,8 @@
+{
+    "blend": { "func": "add", "srcrgb": "srcalpha", "dstrgb": "1-srcalpha" },
+    "vertex": "shadow_depth",
+    "fragment": "shadow_depth",
+    "attributes": [ "Position" ],
+    "samplers": [],
+    "uniforms": []
+}
