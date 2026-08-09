@@ -188,6 +188,8 @@ public class MinecraftGL {
     double velY = 0;
     boolean onGround = false;
     boolean sneaking = false;
+    int eatingItemId = 0;
+    double eatingProgress = 0;
     int health = 20;
     int maxHealth = 20;
     int hunger = 20;
@@ -1275,6 +1277,7 @@ public class MinecraftGL {
         deathScreen = false; deathDropsDone = false; paused = false;
         villagerTradeOpen = false; tradingVillager = null; pauseScreen = 0;
         miningHit = null; miningProgress = 0; sneaking = false;
+        eatingItemId = 0; eatingProgress = 0;
         waterSim.clear();
         for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) generatedColumns[cx][cz] = false;
         gameMode = GAMEMODE_SURVIVAL; flying = false;
@@ -2082,11 +2085,12 @@ public class MinecraftGL {
             }
         } else { miningHit = null; miningProgress = 0; }
 
-        if (right && !rightWasDown) {
+        updateEating(right, dt);
+        if (right && !rightWasDown && eatingItemId == 0) {
             swingTimer = 1.0;
             if (targetVillager != null) {
                 openVillagerTrade(targetVillager);
-            } else if (!tryEatSelected()) {
+            } else if (!startEatingSelected()) {
                 boolean placed = false;
                 if (hit.hit) {
                     int beforeId = selectedItemId();
@@ -2837,17 +2841,32 @@ public class MinecraftGL {
         } else starveTimer = 0;
     }
 
-    boolean tryEatSelected() {
+    boolean startEatingSelected() {
         int id = selectedItemId();
-        if (!craft3dgl.combat.DamageSystem.isFood(id)) return false;
-        if (hunger >= 20) return false;
-        int food = craft3dgl.combat.DamageSystem.foodValue(id);
+        if (!craft3dgl.combat.DamageSystem.isFood(id) || hunger >= 20) return false;
+        eatingItemId = id;
+        eatingProgress = 0;
+        return true;
+    }
+
+    void updateEating(boolean rightHeld, double dt) {
+        if (eatingItemId == 0) return;
+        // Food takes 32 game ticks (1.6 seconds) and is cancelled on release or item switch.
+        if (!rightHeld || selectedItemId() != eatingItemId || selectedItemCount() <= 0 || hunger >= 20) {
+            eatingItemId = 0;
+            eatingProgress = 0;
+            return;
+        }
+        eatingProgress += dt;
+        if (eatingProgress < 1.6) return;
+        int food = craft3dgl.combat.DamageSystem.foodValue(eatingItemId);
         hunger = Math.min(20, hunger + food);
         sound.playEat();
         regenTimer = 0;
         invCount[selectedSlot]--;
         if (invCount[selectedSlot] <= 0) { invId[selectedSlot] = 0; invCount[selectedSlot] = 0; }
-        return true;
+        eatingItemId = 0;
+        eatingProgress = 0;
     }
 
     // ====== VILLAGER LOGIKA ======
