@@ -5368,25 +5368,40 @@ public class MinecraftGL {
         boolean spriteItem = (held == ITEM_EMERALD || held == ITEM_WHEAT || held == ITEM_SEEDS || foodItem);
         boolean toolItem = held > 0 && toolCategory(held) > 0;
 
-        // Direct port of ItemInHandRenderer.applyEatTransform from the supplied MC code.
-        // Craft3D use is 0..1 over 32 ticks, so remaining ticks are 32*(1-use).
+        // Direct port of ItemInHandRenderer.renderArmWithItem for the right hand.
+        // Craft3D uses swingTimer=1 at swing start and 0 at swing end.
         boolean eating = eatingItemId == held && eatingProgress > 0;
+        double attack = Math.max(0.0, Math.min(1.0, 1.0 - swingTimer));
         if (eating) {
             double use = Math.min(1.0, eatingProgress / 1.6);
             double remaining = 32.0 * (1.0 - use);
             double fractionRemaining = remaining / 32.0;
             if (fractionRemaining < 0.8) {
-                double bob = Math.abs(Math.cos(remaining / 4.0 * Math.PI) * 0.1);
-                glTranslated(0.0, bob, 0.0);
+                glTranslated(0.0, Math.abs(Math.cos(remaining / 4.0 * Math.PI) * 0.1), 0.0);
             }
             double progress = 1.0 - Math.pow(fractionRemaining, 27.0);
             glTranslated(progress * 0.6, progress * -0.5, 0.0);
             glRotated(progress * 90.0, 0, 1, 0);
             glRotated(progress * 10.0, 1, 0, 0);
             glRotated(progress * 30.0, 0, 0, 1);
+        } else if (swingTimer > 0) {
+            double root = Math.sqrt(attack);
+            glTranslated(-0.4 * Math.sin(root * Math.PI),
+                    0.2 * Math.sin(root * Math.PI * 2.0),
+                    -0.2 * Math.sin(attack * Math.PI));
         }
-
-        glTranslated(baseX + swingX, baseYpos, baseZ + swingZ);
+        // applyItemArmTransform; walk bob is kept as a small additive offset.
+        glTranslated(0.56 + bobX, -0.52 + bobY, -0.72);
+        if (!eating && swingTimer > 0) {
+            double curve = Math.sin(attack * attack * Math.PI);
+            double rootCurve = Math.sin(Math.sqrt(attack) * Math.PI);
+            glRotated(45.0 - curve * 20.0, 0, 1, 0);
+            glRotated(-rootCurve * 20.0, 0, 0, 1);
+            glRotated(-rootCurve * 80.0, 1, 0, 0);
+            glRotated(-45.0, 0, 1, 0);
+        }
+        // The old renderer applied a second hand-made swing after this MC transform.
+        swingRot = swingZ = swingX = swingTwist = 0;
 
         if (blockItem) {
             // FIX "czarny blok w rece": face() samplouje envLight z world[0][0][0]
@@ -5541,7 +5556,7 @@ public class MinecraftGL {
         if (craft3dgl.entities.SteveRenderer.isLoaded()) {
             float swp = swingTimer > 0 ? (float)(1.0 - swingTimer) : 0f;
             float ait = (float)(System.nanoTime() / 50_000_000.0);
-            craft3dgl.entities.SteveRenderer.drawFirstPersonArm(swp, ait);
+            craft3dgl.entities.SteveRenderer.drawMinecraftFirstPersonArm();
         } else {
             craft3dgl.entities.PlayerRenderer.drawHandArmModel();
         }
@@ -5578,11 +5593,11 @@ public class MinecraftGL {
 
         glPushMatrix();
         // TUNING MODE - uzyj static values (dostosowane strzalkami w game)
-        glTranslated(itemTuneX, itemTuneY, itemTuneZ);
-        if (Math.abs(itemTuneRotX) > 0.01f) glRotated(itemTuneRotX, 1, 0, 0);
-        if (Math.abs(itemTuneRotY) > 0.01f) glRotated(itemTuneRotY, 0, 1, 0);
-        if (Math.abs(itemTuneRotZ) > 0.01f) glRotated(itemTuneRotZ, 0, 0, 1);
-        glScaled(itemTuneScale, itemTuneScale, itemTuneScale);
+        // assets/minecraft/models/item/handheld.json firstperson_righthand
+        glTranslated(1.13 / 16.0, 3.2 / 16.0, 1.13 / 16.0);
+        glRotated(-90.0, 0, 1, 0);
+        glRotated(25.0, 0, 0, 1);
+        glScaled(0.68, 0.68, 0.68);
 
         // Voxel grid: 16x16 pixel -> 1x1 blok (0..1)
         int w = mesh.width, h = mesh.height;
@@ -5674,11 +5689,11 @@ public class MinecraftGL {
         glDisable(GL_ALPHA_TEST);
         glPushMatrix();
         // FOOD tuning values (F12 mode)
-        glTranslated(foodTuneX, foodTuneY, foodTuneZ);
-        if (Math.abs(foodTuneRotX) > 0.01f) glRotated(foodTuneRotX, 1, 0, 0);
-        if (Math.abs(foodTuneRotY) > 0.01f) glRotated(foodTuneRotY, 0, 1, 0);
-        if (Math.abs(foodTuneRotZ) > 0.01f) glRotated(foodTuneRotZ, 0, 0, 1);
-        glScaled(foodTuneScale, foodTuneScale, foodTuneScale);
+        // assets/minecraft/models/item/generated.json firstperson_righthand
+        glTranslated(1.13 / 16.0, 3.2 / 16.0, 1.13 / 16.0);
+        glRotated(-90.0, 0, 1, 0);
+        glRotated(25.0, 0, 0, 1);
+        glScaled(0.68, 0.68, 0.68);
         if (mesh != null) {
             glDisable(GL_TEXTURE_2D);
             int w = mesh.width, h = mesh.height;

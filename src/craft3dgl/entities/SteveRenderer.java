@@ -263,6 +263,26 @@ public final class SteveRenderer {
         glEnd();
     }
 
+    /** Raw right arm matching PlayerModel.rightArm, for ItemInHandRenderer transforms. */
+    public static void drawMinecraftFirstPersonArm() {
+        ensureLoaded();
+        if (texSteve <= 0) return;
+        glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.05f);
+        glBindTexture(GL_TEXTURE_2D, texSteve);
+        glColor4f(1, 1, 1, 1);
+        // PlayerModel rightArm: addBox(-3,-2,-2, 4,12,4), rendered at 1/16 scale.
+        drawBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f, 4, 12, 4, false);
+        glDisable(GL_ALPHA_TEST);
+        glDisable(GL_BLEND);
+        glPopAttrib();
+        glColor4f(1, 1, 1, 1);
+    }
+
     /** 1st person ręka. */
     public static void drawFirstPersonArm(float attackTime, float ageInTicks) {
         ensureLoaded();
