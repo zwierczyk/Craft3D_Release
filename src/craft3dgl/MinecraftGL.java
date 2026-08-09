@@ -5373,22 +5373,8 @@ public class MinecraftGL {
         boolean eating = eatingItemId == held && eatingProgress > 0;
         double attack = Math.max(0.0, Math.min(1.0, 1.0 - swingTimer));
         if (held == 0) {
-            double root = Math.sqrt(attack);
-            double armX = -0.3 * Math.sin(root * Math.PI);
-            double armY = 0.4 * Math.sin(root * Math.PI * 2.0);
-            double armZ = -0.4 * Math.sin(attack * Math.PI);
-            // ItemInHandRenderer.renderPlayerArm, right arm, equip progress = 1.
-            glTranslated(armX + 0.64000005 + bobX, armY - 1.2 + bobY, armZ - 0.71999997);
-            glRotated(45.0, 0, 1, 0);
-            double body = Math.sin(attack * attack * Math.PI);
-            double arm = Math.sin(root * Math.PI);
-            glRotated(arm * 70.0, 0, 1, 0);
-            glRotated(body * -20.0, 0, 0, 1);
-            glTranslated(-1.0, 3.6, 3.5);
-            glRotated(120.0, 0, 0, 1);
-            glRotated(200.0, 1, 0, 0);
-            glRotated(-135.0, 0, 1, 0);
-            glTranslated(5.6, 0.0, 0.0);
+            // drawHandArmModel supplies the calibrated legacy matrix for the custom LWJGL arm.
+            // Vanilla ModelPart matrix units cannot be applied directly to this renderer.
         } else {
             if (eating) {
                 double use = Math.min(1.0, eatingProgress / 1.6);
@@ -5571,9 +5557,9 @@ public class MinecraftGL {
 
     void drawHandArmModel() {
         if (craft3dgl.entities.SteveRenderer.isLoaded()) {
-            // The ItemInHandRenderer transform is already applied by drawHandOverlay.
-            // Draw only the PlayerModel arm here; the old helper applied a second transform.
-            craft3dgl.entities.SteveRenderer.drawMinecraftFirstPersonArm();
+            float swp = swingTimer > 0 ? (float)(1.0 - swingTimer) : 0f;
+            float ait = (float)(System.nanoTime() / 50_000_000.0);
+            craft3dgl.entities.SteveRenderer.drawFirstPersonArm(swp, ait);
         } else {
             craft3dgl.entities.PlayerRenderer.drawHandArmModel();
         }
