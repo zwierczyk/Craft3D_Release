@@ -5447,10 +5447,11 @@ public class MinecraftGL {
             drawCuboid(-0.025, -0.05, -0.05, 0.025, 0.40, 0.05);
             glPopMatrix();
         } else if (spriteItem && craft3dgl.ui.ToolTextures.getTexId(held) > 0) {
-            // NOWY: wszystkie food/emerald/wheat/seeds jako PNG voxel sprite (jak tools)
+            // Food needs a visible arm while it moves to the mouth; other sprites stay item-only.
             glPushMatrix();
             glRotated(swingRot, 1, 0, 0);
             glRotated(swingTwist, 0, 0, 1);
+            if (foodItem) drawHandArmModel();
             drawFoodSpriteInHand(held);
             glPopMatrix();
         } else if (foodItem) {
