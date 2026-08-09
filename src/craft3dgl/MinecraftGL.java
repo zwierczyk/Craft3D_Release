@@ -187,6 +187,7 @@ public class MinecraftGL {
     double z = WORLD_Z / 2.0;
     double velY = 0;
     boolean onGround = false;
+    boolean sneaking = false;
     int health = 20;
     int maxHealth = 20;
     int hunger = 20;
@@ -1273,7 +1274,7 @@ public class MinecraftGL {
         health = maxHealth; hunger = 20; hungerTimer = regenTimer = starveTimer = 0;
         deathScreen = false; deathDropsDone = false; paused = false;
         villagerTradeOpen = false; tradingVillager = null; pauseScreen = 0;
-        miningHit = null; miningProgress = 0;
+        miningHit = null; miningProgress = 0; sneaking = false;
         waterSim.clear();
         for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) generatedColumns[cx][cz] = false;
         gameMode = GAMEMODE_SURVIVAL; flying = false;
@@ -1875,12 +1876,15 @@ public class MinecraftGL {
         }
         boolean ctrlDownH = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
         boolean shiftDownH = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+        // A player cannot stand up while a low ceiling occupies the standing hitbox.
+        boolean wantsSneak = shiftDownH && !flying && !inWater;
+        sneaking = wantsSneak || !playerFreeAtHeight(x, y, z, PLAYER_HEIGHT);
         // MC controls: Shift is sneak, Ctrl is sprint. Sneaking must never speed up walking.
-        boolean sprinting = !flying && ctrlDownH && !shiftDownH && forward > 0.0 && !inWater;
+        boolean sprinting = !flying && ctrlDownH && !sneaking && forward > 0.0 && !inWater;
         double speed;
         if (flying) {
             speed = ctrlDownH ? 22.0 : 12.0;
-        } else if (shiftDownH) {
+        } else if (sneaking) {
             speed = SNEAK_SPEED;
         } else if (sprinting) {
             speed = SPRINT_SPEED;
@@ -1893,7 +1897,7 @@ public class MinecraftGL {
         double dx = (sin * forward + cos * strafe) * speed * dt;
         double dz = (cos * forward - sin * strafe) * speed * dt;
         boolean moving = Math.abs(dx) + Math.abs(dz) > 0.001;
-        moveHorizontal(dx, dz, shiftDownH && onGround && !flying);
+        moveHorizontal(dx, dz, sneaking && onGround && !flying);
 
         boolean spaceDown = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         boolean shiftDown = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
@@ -2330,7 +2334,7 @@ public class MinecraftGL {
         double dy0 = byBot, dy1 = byBot + 2;
         double px0 = x - PLAYER_RADIUS, px1 = x + PLAYER_RADIUS;
         double pz0 = z - PLAYER_RADIUS, pz1 = z + PLAYER_RADIUS;
-        double py0 = y, py1 = y + PLAYER_HEIGHT;
+        double py0 = y, py1 = y + playerHeight();
         if (px1 > dx0 && px0 < dx1 && pz1 > dz0 && pz0 < dz1 && py1 > dy0 && py0 < dy1) return true;
         double rA = 0.40;
         for (AnimalGL an : animals) {
@@ -2976,7 +2980,7 @@ public class MinecraftGL {
         double dx = Math.sin(yaw) * cp;
         double dy = Math.sin(pitch);
         double dz = Math.cos(yaw) * cp;
-        double ox = x, oy = y + EYE_HEIGHT, oz = z;
+        double ox = x, oy = y + eyeHeight(), oz = z;
         VillagerGL best = null;
         double bestT = maxDist;
         for (VillagerGL v : villagers) {
@@ -3320,7 +3324,7 @@ public class MinecraftGL {
         double dx = Math.sin(yaw) * cp;
         double dy = Math.sin(pitch);
         double dz = Math.cos(yaw) * cp;
-        double ox = x, oy = y + EYE_HEIGHT, oz = z;
+        double ox = x, oy = y + eyeHeight(), oz = z;
         AnimalGL best = null;
         double bestT = maxDist;
         for (AnimalGL a : animals) {
@@ -3578,11 +3582,14 @@ public class MinecraftGL {
         }
     }
 
+    double playerHeight() { return sneaking ? 1.50 : PLAYER_HEIGHT; }
+    double eyeHeight() { return sneaking ? 1.27 : EYE_HEIGHT; }
+
     boolean playerTouchingWater() {
         int minX = (int)Math.floor(x - PLAYER_RADIUS);
         int maxX = (int)Math.floor(x + PLAYER_RADIUS);
         int minY = (int)Math.floor(y + 0.02);
-        int maxY = (int)Math.floor(y + PLAYER_HEIGHT - 0.02);
+        int maxY = (int)Math.floor(y + playerHeight() - 0.02);
         int minZ = (int)Math.floor(z - PLAYER_RADIUS);
         int maxZ = (int)Math.floor(z + PLAYER_RADIUS);
         for (int bx = minX; bx <= maxX; bx++) for (int by = minY; by <= maxY; by++) for (int bz = minZ; bz <= maxZ; bz++) {
@@ -3592,10 +3599,14 @@ public class MinecraftGL {
     }
 
     boolean playerFree(double nx, double ny, double nz) {
+        return playerFreeAtHeight(nx, ny, nz, playerHeight());
+    }
+
+    boolean playerFreeAtHeight(double nx, double ny, double nz, double height) {
         int minX = (int) Math.floor(nx - PLAYER_RADIUS);
         int maxX = (int) Math.floor(nx + PLAYER_RADIUS);
         int minY = (int) Math.floor(ny + 0.02);
-        int maxY = (int) Math.floor(ny + PLAYER_HEIGHT - 0.02);
+        int maxY = (int) Math.floor(ny + height - 0.02);
         int minZ = (int) Math.floor(nz - PLAYER_RADIUS);
         int maxZ = (int) Math.floor(nz + PLAYER_RADIUS);
         double px0 = nx - PLAYER_RADIUS, px1 = nx + PLAYER_RADIUS;
@@ -3619,7 +3630,7 @@ public class MinecraftGL {
     boolean blockIntersectsPlayer(int bx, int by, int bz) {
         return bx + 1 > x - PLAYER_RADIUS && bx < x + PLAYER_RADIUS
                 && bz + 1 > z - PLAYER_RADIUS && bz < z + PLAYER_RADIUS
-                && by + 1 > y && by < y + PLAYER_HEIGHT;
+                && by + 1 > y && by < y + playerHeight();
     }
 
     void render() {
@@ -3634,7 +3645,7 @@ public class MinecraftGL {
         // Aktualizuj kolor mgly + clear color pod aktualny stan dnia
         float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(dayFraction);
         // UNDERWATER FOG - gdy kamera pod woda, ciemnoniebieski gesty fog
-        boolean camUnderwater = isWaterAt(x, y + EYE_HEIGHT, z);
+        boolean camUnderwater = isWaterAt(x, y + eyeHeight(), z);
         if (camUnderwater) {
             fogC = new float[]{0.05f, 0.15f, 0.35f, 1.0f};   // ciemnoniebieski
             glFogf(GL_FOG_DENSITY, 0.08f);                    // gesty
@@ -3666,7 +3677,7 @@ public class MinecraftGL {
         // SHADOW PASS - render sceny z widoku slonca do shadow map (przed main scene!)
         float[] cachedLightMatrix = null;
         // FIX: wylacz shadow pass tylko gdy KAMERA gracza jest pod woda (nie na powierzchni)
-        boolean cameraInWater = isWaterAt(x, y + EYE_HEIGHT, z);
+        boolean cameraInWater = isWaterAt(x, y + eyeHeight(), z);
         if (USE_MODERN_RENDERER && craft3dgl.blaze3d.renderer.GameRenderer.shadowsEnabled && !cameraInWater) {
             cachedLightMatrix = renderShadowPass();
         }
@@ -3711,7 +3722,7 @@ public class MinecraftGL {
         double fy = Math.sin(usePitch);
         double fz = Math.cos(useYaw) * cp;
         double eyeX = x;
-        double eyeY = y + EYE_HEIGHT;
+        double eyeY = y + eyeHeight();
         double eyeZ = z;
         if (cameraMode == 0) {
             lookAt(eyeX, eyeY, eyeZ, eyeX + fx, eyeY + fy, eyeZ + fz, 0, 1, 0);
@@ -3727,7 +3738,7 @@ public class MinecraftGL {
     }
 
     double[] safeThirdPersonOffset(double dx, double dy, double dz, double maxDist) {
-        double ox = x, oy = y + EYE_HEIGHT, oz = z;
+        double ox = x, oy = y + eyeHeight(), oz = z;
         double len = Math.sqrt(dx*dx + dy*dy + dz*dz);
         if (len < 1e-9) return new double[]{0, 0, 0};
         double nx = dx/len, ny = dy/len, nz = dz/len;
@@ -4248,7 +4259,7 @@ public class MinecraftGL {
             double dayFraction = (gameTime / 240.0) % 1.0;
             float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(dayFraction);
             // Underwater fog - ciemnoniebieski, KROTKI zasieg (widoczność ograniczona)
-            boolean underwater = isWaterAt(x, y + EYE_HEIGHT, z);
+            boolean underwater = isWaterAt(x, y + eyeHeight(), z);
             if (underwater) {
                 fogC = new float[]{0.05f, 0.15f, 0.35f, 1.0f};
             }
@@ -4321,7 +4332,7 @@ public class MinecraftGL {
         }
         craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogColor(fogC[0], fogC[1], fogC[2], 1f);
         // Underwater = krotki zasieg widocznosci (5-15 blokow)
-        boolean uw = isWaterAt(x, y + EYE_HEIGHT, z);
+        boolean uw = isWaterAt(x, y + eyeHeight(), z);
         craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogStart(uw ? 2f : 40f);
         craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogEnd(uw ? 20f : 150f);
         craft3dgl.blaze3d.renderer.RenderSystem.setFogEnabled(true);
@@ -4743,7 +4754,7 @@ public class MinecraftGL {
         if (pops.isEmpty()) return;
         craft3dgl.ui.WorldToScreen proj = new craft3dgl.ui.WorldToScreen();
         double aspect = (double) width / (double) Math.max(1, height);
-        double camX = x, camY = y + EYE_HEIGHT, camZ = z;
+        double camX = x, camY = y + eyeHeight(), camZ = z;
         for (craft3dgl.ui.DamageNumbers.Popup pp : pops) {
             proj.project(pp.worldX, pp.worldY, pp.worldZ, camX, camY, camZ, yaw, pitch, 72.0, aspect, width, height);
             if (!proj.visible) continue;
@@ -5905,7 +5916,7 @@ public class MinecraftGL {
         double dx = Math.sin(yaw) * cp;
         double dy = Math.sin(pitch);
         double dz = Math.cos(yaw) * cp;
-        return craft3dgl.physics.RayCaster.cast(x, y + EYE_HEIGHT, z, dx, dy, dz, maxDist, rayWorld);
+        return craft3dgl.physics.RayCaster.cast(x, y + eyeHeight(), z, dx, dy, dz, maxDist, rayWorld);
     }
 
     void setBlock(int bx, int by, int bz, int id) {
