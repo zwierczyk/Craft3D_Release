@@ -5368,20 +5368,25 @@ public class MinecraftGL {
         boolean spriteItem = (held == ITEM_EMERALD || held == ITEM_WHEAT || held == ITEM_SEEDS || foodItem);
         boolean toolItem = held > 0 && toolCategory(held) > 0;
 
-        glTranslated(baseX + swingX, baseYpos, baseZ + swingZ);
-
-        // Food use animation: repeated movement from the hand to the mouth during 32 ticks.
+        // Direct port of ItemInHandRenderer.applyEatTransform from the supplied MC code.
+        // Craft3D use is 0..1 over 32 ticks, so remaining ticks are 32*(1-use).
         boolean eating = eatingItemId == held && eatingProgress > 0;
         if (eating) {
-            // Based on Minecraft's ItemInHandRenderer use-item transform: the item
-            // travels toward the mouth, with three short bite pulses instead of a shake.
             double use = Math.min(1.0, eatingProgress / 1.6);
-            double mouth = Math.sin(use * Math.PI * 0.5);
-            double bite = Math.max(0.0, Math.sin(use * Math.PI * 6.0)) * mouth;
-            glTranslated(-0.30 * mouth, 0.36 * mouth + 0.045 * bite, -0.18 * mouth);
-            glRotated(68.0 * mouth, 0, 1, 0);
-            glRotated(18.0 * mouth + 7.0 * bite, 0, 0, 1);
+            double remaining = 32.0 * (1.0 - use);
+            double fractionRemaining = remaining / 32.0;
+            if (fractionRemaining < 0.8) {
+                double bob = Math.abs(Math.cos(remaining / 4.0 * Math.PI) * 0.1);
+                glTranslated(0.0, bob, 0.0);
+            }
+            double progress = 1.0 - Math.pow(fractionRemaining, 27.0);
+            glTranslated(progress * 0.6, progress * -0.5, 0.0);
+            glRotated(progress * 90.0, 0, 1, 0);
+            glRotated(progress * 10.0, 1, 0, 0);
+            glRotated(progress * 30.0, 0, 0, 1);
         }
+
+        glTranslated(baseX + swingX, baseYpos, baseZ + swingZ);
 
         if (blockItem) {
             // FIX "czarny blok w rece": face() samplouje envLight z world[0][0][0]
