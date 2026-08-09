@@ -318,6 +318,11 @@ public final class SteveRenderer {
         glRotatef(200f, 1, 0, 0);
         glRotatef(-135f, 0, 1, 0);
         glTranslatef(5.6f, 0, 0);
+        // Craft3D's hand projection uses a different unit scale than the vanilla view matrix.
+        // Convert the ModelPart arm once here, preserving the MC cube and skin UV layout.
+        glTranslatef(-0.10f, -0.34f, 0.0f);
+        glScalef(1.65f, 1.65f, 1.65f);
+        glRotatef(180f, 0, 0, 1);
         // PlayerModel rightArm: setPos(-5,2,0), addBox(-3,-2,-2, 4,12,4), render(1/16).
         glTranslatef(-5f / 16f, 2f / 16f, 0);
         drawBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f, 4, 12, 4, false);
