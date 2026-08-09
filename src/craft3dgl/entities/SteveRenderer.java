@@ -290,7 +290,8 @@ public final class SteveRenderer {
 
         glRotatef(-75, 1, 0, 0);
         glRotatef(-20, 0, 1, 0);
-        glScalef(0.4f, 0.4f, 0.4f);
+        // The old 0.4 scale made the first-person arm noticeably smaller than Minecraft.
+        glScalef(0.65f, 0.65f, 0.65f);
 
         drawBox(40, 16, -0.125f, -0.75f, -0.125f, 4, 12, 4, false);
 
