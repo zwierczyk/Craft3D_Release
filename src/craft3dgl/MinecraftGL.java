@@ -5554,9 +5554,12 @@ public class MinecraftGL {
 
     void drawHandArmModel() {
         if (craft3dgl.entities.SteveRenderer.isLoaded()) {
-            float swp = swingTimer > 0 ? (float)(1.0 - swingTimer) : 0f;
-            float ait = (float)(System.nanoTime() / 50_000_000.0);
-            craft3dgl.entities.SteveRenderer.drawFirstPersonArm(swp, ait);
+            // The ItemInHandRenderer transform is already applied by drawHandOverlay.
+            // Draw only the PlayerModel arm here; the old helper applied a second transform.
+            glPushMatrix();
+            glScaled(0.65, 0.65, 0.65);
+            craft3dgl.entities.SteveRenderer.drawMinecraftFirstPersonArm();
+            glPopMatrix();
         } else {
             craft3dgl.entities.PlayerRenderer.drawHandArmModel();
         }
