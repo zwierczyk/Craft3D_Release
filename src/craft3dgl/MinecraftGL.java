@@ -5540,8 +5540,7 @@ public class MinecraftGL {
     void drawHandArmModel() {
         if (craft3dgl.entities.SteveRenderer.isLoaded()) {
             float swp = swingTimer > 0 ? (float)(1.0 - swingTimer) : 0f;
-            float ait = (float)(System.nanoTime() / 50_000_000.0);
-            craft3dgl.entities.SteveRenderer.drawFirstPersonArm(swp, ait);
+            craft3dgl.entities.SteveRenderer.drawMinecraftFirstPersonArm(swp, 1f);
         } else {
             craft3dgl.entities.PlayerRenderer.drawHandArmModel();
         }

@@ -283,6 +283,51 @@ public final class SteveRenderer {
         glColor4f(1, 1, 1, 1);
     }
 
+    /**
+     * First-person right arm ported from PlayerModel.rightArm and
+     * ItemInHandRenderer.renderPlayerArm (Minecraft 1.14.4 coordinate order).
+     */
+    public static void drawMinecraftFirstPersonArm(float attackProgress, float equipProgress) {
+        ensureLoaded();
+        if (texSteve <= 0) return;
+        float attack = Math.max(0f, Math.min(1f, attackProgress));
+        float equip = Math.max(0f, Math.min(1f, equipProgress));
+        float root = (float)Math.sqrt(attack);
+        float swingX = -0.3f * (float)Math.sin(root * Math.PI);
+        float swingY =  0.4f * (float)Math.sin(root * Math.PI * 2.0);
+        float swingZ = -0.4f * (float)Math.sin(attack * Math.PI);
+        float body = (float)Math.sin(attack * attack * Math.PI);
+        float arm = (float)Math.sin(root * Math.PI);
+
+        glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.05f);
+        glBindTexture(GL_TEXTURE_2D, texSteve);
+        glColor4f(1, 1, 1, 1);
+        glPushMatrix();
+        // ItemInHandRenderer.renderPlayerArm, right arm.
+        glTranslatef(swingX + 0.64000005f, swingY - 0.6f - equip * 0.6f, swingZ - 0.71999997f);
+        glRotatef(45f, 0, 1, 0);
+        glRotatef(arm * 70f, 0, 1, 0);
+        glRotatef(body * -20f, 0, 0, 1);
+        glTranslatef(-1f, 3.6f, 3.5f);
+        glRotatef(120f, 0, 0, 1);
+        glRotatef(200f, 1, 0, 0);
+        glRotatef(-135f, 0, 1, 0);
+        glTranslatef(5.6f, 0, 0);
+        // PlayerModel rightArm: setPos(-5,2,0), addBox(-3,-2,-2, 4,12,4), render(1/16).
+        glTranslatef(-5f / 16f, 2f / 16f, 0);
+        drawBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f, 4, 12, 4, false);
+        glPopMatrix();
+        glDisable(GL_ALPHA_TEST);
+        glDisable(GL_BLEND);
+        glPopAttrib();
+        glColor4f(1, 1, 1, 1);
+    }
+
     /** 1st person ręka. */
     public static void drawFirstPersonArm(float attackTime, float ageInTicks) {
         ensureLoaded();
