@@ -5368,39 +5368,56 @@ public class MinecraftGL {
         boolean spriteItem = (held == ITEM_EMERALD || held == ITEM_WHEAT || held == ITEM_SEEDS || foodItem);
         boolean toolItem = held > 0 && toolCategory(held) > 0;
 
-        // Direct port of ItemInHandRenderer.renderArmWithItem for the right hand.
-        // Craft3D uses swingTimer=1 at swing start and 0 at swing end.
+        // Direct port of ItemInHandRenderer. Empty hand uses renderPlayerArm,
+        // which has a different transform than an item held in the right hand.
         boolean eating = eatingItemId == held && eatingProgress > 0;
         double attack = Math.max(0.0, Math.min(1.0, 1.0 - swingTimer));
-        if (eating) {
-            double use = Math.min(1.0, eatingProgress / 1.6);
-            double remaining = 32.0 * (1.0 - use);
-            double fractionRemaining = remaining / 32.0;
-            if (fractionRemaining < 0.8) {
-                glTranslated(0.0, Math.abs(Math.cos(remaining / 4.0 * Math.PI) * 0.1), 0.0);
-            }
-            double progress = 1.0 - Math.pow(fractionRemaining, 27.0);
-            glTranslated(progress * 0.6, progress * -0.5, 0.0);
-            glRotated(progress * 90.0, 0, 1, 0);
-            glRotated(progress * 10.0, 1, 0, 0);
-            glRotated(progress * 30.0, 0, 0, 1);
-        } else if (swingTimer > 0) {
+        if (held == 0) {
             double root = Math.sqrt(attack);
-            glTranslated(-0.4 * Math.sin(root * Math.PI),
-                    0.2 * Math.sin(root * Math.PI * 2.0),
-                    -0.2 * Math.sin(attack * Math.PI));
+            double armX = -0.3 * Math.sin(root * Math.PI);
+            double armY = 0.4 * Math.sin(root * Math.PI * 2.0);
+            double armZ = -0.4 * Math.sin(attack * Math.PI);
+            // ItemInHandRenderer.renderPlayerArm, right arm, equip progress = 1.
+            glTranslated(armX + 0.64000005 + bobX, armY - 1.2 + bobY, armZ - 0.71999997);
+            glRotated(45.0, 0, 1, 0);
+            double body = Math.sin(attack * attack * Math.PI);
+            double arm = Math.sin(root * Math.PI);
+            glRotated(arm * 70.0, 0, 1, 0);
+            glRotated(body * -20.0, 0, 0, 1);
+            glTranslated(-1.0, 3.6, 3.5);
+            glRotated(120.0, 0, 0, 1);
+            glRotated(200.0, 1, 0, 0);
+            glRotated(-135.0, 0, 1, 0);
+            glTranslated(5.6, 0.0, 0.0);
+        } else {
+            if (eating) {
+                double use = Math.min(1.0, eatingProgress / 1.6);
+                double remaining = 32.0 * (1.0 - use);
+                double fractionRemaining = remaining / 32.0;
+                if (fractionRemaining < 0.8) {
+                    glTranslated(0.0, Math.abs(Math.cos(remaining / 4.0 * Math.PI) * 0.1), 0.0);
+                }
+                double progress = 1.0 - Math.pow(fractionRemaining, 27.0);
+                glTranslated(progress * 0.6, progress * -0.5, 0.0);
+                glRotated(progress * 90.0, 0, 1, 0);
+                glRotated(progress * 10.0, 1, 0, 0);
+                glRotated(progress * 30.0, 0, 0, 1);
+            } else if (swingTimer > 0) {
+                double root = Math.sqrt(attack);
+                glTranslated(-0.4 * Math.sin(root * Math.PI),
+                        0.2 * Math.sin(root * Math.PI * 2.0),
+                        -0.2 * Math.sin(attack * Math.PI));
+            }
+            glTranslated(0.56 + bobX, -0.52 + bobY, -0.72);
+            if (!eating && swingTimer > 0) {
+                double curve = Math.sin(attack * attack * Math.PI);
+                double rootCurve = Math.sin(Math.sqrt(attack) * Math.PI);
+                glRotated(45.0 - curve * 20.0, 0, 1, 0);
+                glRotated(-rootCurve * 20.0, 0, 0, 1);
+                glRotated(-rootCurve * 80.0, 1, 0, 0);
+                glRotated(-45.0, 0, 1, 0);
+            }
         }
-        // applyItemArmTransform; walk bob is kept as a small additive offset.
-        glTranslated(0.56 + bobX, -0.52 + bobY, -0.72);
-        if (!eating && swingTimer > 0) {
-            double curve = Math.sin(attack * attack * Math.PI);
-            double rootCurve = Math.sin(Math.sqrt(attack) * Math.PI);
-            glRotated(45.0 - curve * 20.0, 0, 1, 0);
-            glRotated(-rootCurve * 20.0, 0, 0, 1);
-            glRotated(-rootCurve * 80.0, 1, 0, 0);
-            glRotated(-45.0, 0, 1, 0);
-        }
-        // The old renderer applied a second hand-made swing after this MC transform.
         swingRot = swingZ = swingX = swingTwist = 0;
 
         if (blockItem) {
@@ -5556,10 +5573,7 @@ public class MinecraftGL {
         if (craft3dgl.entities.SteveRenderer.isLoaded()) {
             // The ItemInHandRenderer transform is already applied by drawHandOverlay.
             // Draw only the PlayerModel arm here; the old helper applied a second transform.
-            glPushMatrix();
-            glScaled(0.65, 0.65, 0.65);
             craft3dgl.entities.SteveRenderer.drawMinecraftFirstPersonArm();
-            glPopMatrix();
         } else {
             craft3dgl.entities.PlayerRenderer.drawHandArmModel();
         }
