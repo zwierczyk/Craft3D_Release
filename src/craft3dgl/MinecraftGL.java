@@ -3820,7 +3820,7 @@ public class MinecraftGL {
             // Konwersja: mcAttack = 1 - swingTimer
             float attackTime = swingTimer > 0 ? (float)(1.0 - swingTimer) : 0f;
             craft3dgl.entities.SteveRenderer.drawPlayer(x, y, z, bodyYaw, yaw, pitch,
-                this.limbSwing, this.limbSwingAmount, ageInTicks, attackTime, false);
+                this.limbSwing, this.limbSwingAmount, ageInTicks, attackTime, sneaking);
             if (held > 0 && heldCount > 0) drawPlayerHeldItem3D(held);
         } else {
             // Fallback do starego
@@ -3833,6 +3833,10 @@ public class MinecraftGL {
         glPushMatrix();
         glTranslated(x, y, z);
         glRotated(Math.toDegrees(bodyYaw), 0, 1, 0);
+        if (sneaking) {
+            glTranslated(0, -0.125, 0.25);
+            glRotated(Math.toDegrees(0.5), 1, 0, 0);
+        }
         // Pivot dloni prawej reki (jak w SteveRenderer): (0.3125, 1.375, 0)
         glTranslated(0.3125, 1.375, 0);
         // Zejdz do konca reki (dlon)
