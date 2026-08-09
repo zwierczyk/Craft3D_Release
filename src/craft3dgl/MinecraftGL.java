@@ -5370,6 +5370,16 @@ public class MinecraftGL {
 
         glTranslated(baseX + swingX, baseYpos, baseZ + swingZ);
 
+        // Food use animation: repeated movement from the hand to the mouth during 32 ticks.
+        boolean eating = eatingItemId == held && eatingProgress > 0;
+        if (eating) {
+            double use = Math.min(1.0, eatingProgress / 1.6);
+            double bite = Math.abs(Math.sin(use * Math.PI * 8.0));
+            glTranslated(-0.16 * bite, 0.23 * bite, -0.12 * bite);
+            glRotated(22.0 * bite, 0, 0, 1);
+            glRotated(-12.0 * bite, 1, 0, 0);
+        }
+
         if (blockItem) {
             // FIX "czarny blok w rece": face() samplouje envLight z world[0][0][0]
             // co daje 0 (bo tam nie ma swiatla). Rozwiazanie: tymczasowo wywalamy lightEngine
