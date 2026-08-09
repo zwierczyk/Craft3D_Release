@@ -118,8 +118,11 @@ public class MinecraftGL {
     static final int ATLAS_ROWS = TextureAtlas.ATLAS_ROWS;
 
     static final double PLAYER_RADIUS = 0.28;
-    static final double PLAYER_HEIGHT = 1.78;
-    static final double EYE_HEIGHT = 1.55;
+    static final double PLAYER_HEIGHT = 1.80;
+    static final double EYE_HEIGHT = 1.62;
+    static final double WALK_SPEED = 4.317;
+    static final double SPRINT_SPEED = 5.612;
+    static final double SNEAK_SPEED = 1.295;
 
     long window;
     int width = WIN_W;
@@ -1872,11 +1875,17 @@ public class MinecraftGL {
         }
         boolean ctrlDownH = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
         boolean shiftDownH = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+        // MC controls: Shift is sneak, Ctrl is sprint. Sneaking must never speed up walking.
+        boolean sprinting = !flying && ctrlDownH && !shiftDownH && forward > 0.0 && !inWater;
         double speed;
         if (flying) {
             speed = ctrlDownH ? 22.0 : 12.0;
+        } else if (shiftDownH) {
+            speed = SNEAK_SPEED;
+        } else if (sprinting) {
+            speed = SPRINT_SPEED;
         } else {
-            speed = shiftDownH ? 8.0 : 5.0;
+            speed = WALK_SPEED;
         }
         if (inWater && !flying) speed *= 0.50;
 
@@ -1884,7 +1893,7 @@ public class MinecraftGL {
         double dx = (sin * forward + cos * strafe) * speed * dt;
         double dz = (cos * forward - sin * strafe) * speed * dt;
         boolean moving = Math.abs(dx) + Math.abs(dz) > 0.001;
-        moveHorizontal(dx, dz);
+        moveHorizontal(dx, dz, shiftDownH && onGround && !flying);
 
         boolean spaceDown = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         boolean shiftDown = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
@@ -1939,7 +1948,7 @@ public class MinecraftGL {
             } else {
                 // Na ladzie - normalna fizyka
                 if (spaceDown && !spaceWasDown && onGround) {
-                    velY = 7.2;
+                    velY = 6.8;
                     onGround = false;
                     sound.playJump();
                 }
@@ -2755,7 +2764,7 @@ public class MinecraftGL {
         stepSoundTimer -= dt;
         if (stepSoundTimer <= 0) {
             sound.playStep(blockUnderPlayer());
-            stepSoundTimer = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? 0.26 : 0.38;
+            stepSoundTimer = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? 0.72 : 0.38;
             // Spawn footstep dust
             spawnFootstepDust();
         }
@@ -3539,9 +3548,22 @@ public class MinecraftGL {
         }
     }
 
-    void moveHorizontal(double dx, double dz) {
-        if (playerFree(x + dx, y, z)) x += dx;
-        if (playerFree(x, y, z + dz)) z += dz;
+    void moveHorizontal(double dx, double dz, boolean sneaking) {
+        // Shift in Minecraft prevents the player from walking off a ledge.
+        if (playerFree(x + dx, y, z) && (!sneaking || hasGroundBelow(x + dx, z))) x += dx;
+        if (playerFree(x, y, z + dz) && (!sneaking || hasGroundBelow(x, z + dz))) z += dz;
+    }
+
+    boolean hasGroundBelow(double px, double pz) {
+        int by = (int)Math.floor(y - 0.08);
+        int minX = (int)Math.floor(px - PLAYER_RADIUS + 0.04);
+        int maxX = (int)Math.floor(px + PLAYER_RADIUS - 0.04);
+        int minZ = (int)Math.floor(pz - PLAYER_RADIUS + 0.04);
+        int maxZ = (int)Math.floor(pz + PLAYER_RADIUS - 0.04);
+        for (int bx = minX; bx <= maxX; bx++) for (int bz = minZ; bz <= maxZ; bz++) {
+            if (solid(bx, by, bz)) return true;
+        }
+        return false;
     }
 
     void moveVertical(double dy) {

@@ -7,8 +7,8 @@ public final class PlayerPhysics {
     private PlayerPhysics() {}
 
     public static final double PLAYER_RADIUS = 0.28;
-    public static final double PLAYER_HEIGHT = 1.78;
-    public static final double EYE_HEIGHT = 1.55;
+    public static final double PLAYER_HEIGHT = 1.80;
+    public static final double EYE_HEIGHT = 1.62;
 
     // Grawitacja
     public static final double GRAVITY = 18.0;             // m/s² na powietrzu
@@ -17,7 +17,7 @@ public final class PlayerPhysics {
     public static final double TERMINAL_WATER = -3.2;
 
     // Skok
-    public static final double JUMP_VELOCITY = 7.2;
+    public static final double JUMP_VELOCITY = 6.8;
     public static final double JUMP_VELOCITY_WATER = 3.2;
 
     // Latanie (creative)
@@ -27,8 +27,9 @@ public final class PlayerPhysics {
     public static final double FLY_CLIMB_SPRINT = 28.0;
 
     // Chodzenie
-    public static final double WALK_SPEED = 5.0;
-    public static final double SPRINT_SPEED = 8.0;
+    public static final double WALK_SPEED = 4.317;
+    public static final double SPRINT_SPEED = 5.612;
+    public static final double SNEAK_SPEED = 1.295;
     public static final double WATER_SPEED_MULT = 0.50;
 
     // Damage przy upadku
