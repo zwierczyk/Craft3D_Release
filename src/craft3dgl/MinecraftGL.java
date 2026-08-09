@@ -2058,9 +2058,9 @@ public class MinecraftGL {
             if (swingTimer < 0) swingTimer = 0;
         }
 
-        Hit hit = castRay(7.0);
-        AnimalGL targetAnimal = findTargetAnimal(5.5);
-        VillagerGL targetVillager = findTargetVillager(5.5);
+        Hit hit = castRay(blockReach());
+        AnimalGL targetAnimal = findTargetAnimal(entityReach());
+        VillagerGL targetVillager = findTargetVillager(entityReach());
 
         if (left && targetVillager != null && !leftWasDown) {
             attackVillager(targetVillager);
@@ -3668,7 +3668,7 @@ public class MinecraftGL {
         if (!USE_MODERN_RENDERER) drawChunks(true);
         drawDoors();
         drawParticles();
-        Hit hit = castRay(7.0);
+        Hit hit = castRay(blockReach());
         if (hit.hit) drawFaceOutline(hit);
         // Update dynamic lightmap 16x16 z aktualnym czasem dnia
         if (gameRenderer.getLightmapTexture() != null) {
@@ -5914,6 +5914,10 @@ public class MinecraftGL {
     }
 
     int tileFor(int id, int dir) { return craft3dgl.world.BlockTextures.tileFor(id, dir); }
+
+    // Minecraft reach: survival blocks 4.5, creative blocks 5.0; melee 3.0 / 5.0.
+    double blockReach() { return gameMode == GAMEMODE_CREATIVE ? 5.0 : 4.5; }
+    double entityReach() { return gameMode == GAMEMODE_CREATIVE ? 5.0 : 3.0; }
 
     Hit castRay(double maxDist) {
         double cp = Math.cos(pitch);
