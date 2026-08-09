@@ -150,14 +150,14 @@ public final class SteveRenderer {
 
         // === HEAD ===
         glPushMatrix();
-        glTranslated(0, headY, 0);
+        glTranslated(0, 1.75, 0);
         // Head yaw (osobno od body)
         if (netHeadYaw != 0) glRotated(Math.toDegrees(netHeadYaw), 0, 1, 0);
         // Head pitch: pitch > 0 (patrzenie w gore) → twarz w gore.
         // Nasza twarz na +Z. glRotate(kat, 1,0,0) obraca (0,0,+1) w kierunku -Y gdy kat>0.
         // Chcemy: pitch > 0 → twarz w +Y (up). Znak ujemny.
         glRotated(-Math.toDegrees(pitch), 1, 0, 0);
-        drawBox(0, 0, -0.25f, 0, -0.25f, 8, 8, 8, false);
+        drawBox(0, 0, -0.25f, -0.25f, -0.25f, 8, 8, 8, false);
         // Hat overlay wylaczony
         glPopMatrix();
 
@@ -165,7 +165,7 @@ public final class SteveRenderer {
         // Wcielenie MC "right arm" ma pivot na -5 (LEWO w MC), ale my mamy odwrocona X przez brak scale(-1)
         // Wiec prawa reka Steve u nas na +X.
         glPushMatrix();
-        glTranslated(0.3125, 1.375, 0);  // pivot ramie (5 px + 22 px)
+        glTranslated(0.375, 1.50, 0);  // PlayerModel arm: x=+6 px, y=24 px
         glRotated(Math.toDegrees(armR + armR_attack_x), 1, 0, 0);
         if (armR_z != 0 || armR_attack_z != 0) glRotated(Math.toDegrees(armR_z + armR_attack_z), 0, 0, 1);
         drawBox(40, 16, -0.125f, -0.75f, -0.125f, 4, 12, 4, false);
@@ -173,7 +173,7 @@ public final class SteveRenderer {
 
         // === LEFT ARM
         glPushMatrix();
-        glTranslated(-0.3125, 1.375, 0);
+        glTranslated(-0.375, 1.50, 0);
         glRotated(Math.toDegrees(armL), 1, 0, 0);
         if (armL_z != 0) glRotated(Math.toDegrees(armL_z), 0, 0, 1);
         drawBox(32, 48, -0.125f, -0.75f, -0.125f, 4, 12, 4, true);
