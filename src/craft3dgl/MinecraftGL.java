@@ -5459,7 +5459,7 @@ public class MinecraftGL {
             glPushMatrix();
             glRotated(swingRot, 1, 0, 0);
             glRotated(swingTwist, 0, 0, 1);
-            if (foodItem) drawHandArmModel();
+            // Vanilla ItemInHandRenderer renders the food model here; the arm is not a second overlay.
             drawFoodSpriteInHand(held);
             glPopMatrix();
         } else if (foodItem) {
@@ -5674,11 +5674,11 @@ public class MinecraftGL {
         glDisable(GL_ALPHA_TEST);
         glPushMatrix();
         // FOOD tuning values (F12 mode)
-        glTranslated(foodTuneX, foodTuneY, foodTuneZ);
-        if (Math.abs(foodTuneRotX) > 0.01f) glRotated(foodTuneRotX, 1, 0, 0);
-        if (Math.abs(foodTuneRotY) > 0.01f) glRotated(foodTuneRotY, 0, 1, 0);
-        if (Math.abs(foodTuneRotZ) > 0.01f) glRotated(foodTuneRotZ, 0, 0, 1);
-        glScaled(foodTuneScale, foodTuneScale, foodTuneScale);
+        // assets/minecraft/models/item/generated.json firstperson_righthand
+        glTranslated(1.13 / 16.0, 3.2 / 16.0, 1.13 / 16.0);
+        glRotated(-90.0, 0, 1, 0);
+        glRotated(25.0, 0, 0, 1);
+        glScaled(0.68, 0.68, 0.68);
         if (mesh != null) {
             glDisable(GL_TEXTURE_2D);
             int w = mesh.width, h = mesh.height;
