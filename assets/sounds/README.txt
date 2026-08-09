@@ -1,13 +1,9 @@
-Tu mozesz wrzucic pliki .wav do nadpisania wbudowanych dzwiekow:
+Folder na przyszle pliki dzwiekowe gry.
 
-  click.wav   - klikniecia UI
-  jump.wav    - skok
-  place.wav   - postawienie bloku
-  break.wav   - zniszczenie bloku
-  step.wav    - kroki
-  eat.wav     - jedzenie
-  hurt.wav    - obrazenia
-  animal.wav  - dzwieki zwierzat
+Obecnie Craft3D nie zawiera zadnych dolaczonych plikow audio. SoundEngine
+zostaje w kodzie, aby latwo dodac nowe dzwieki w przyszlosci. Jezeli w folderze
+pojawi sie plik WAV o ponizszej nazwie, gra wykorzysta go automatycznie:
 
-Bez tych plikow gra uzywa wbudowanych syntetycznych dzwiekow
-generowanych programowo w czasie rzeczywistym.
+  click.wav, jump.wav, place.wav, break.wav, step.wav, eat.wav, hurt.wav
+  animal.wav, cow.wav, pig.wav, sheep.wav, experience_orb.wav, xp.wav
+  levelup.wav, door_open.wav, door_close.wav, splash.wav
