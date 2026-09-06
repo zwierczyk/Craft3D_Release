@@ -152,6 +152,12 @@ public class MinecraftGL {
     }
     final Chunk[][][] chunks = new Chunk[CHUNKS_X][CHUNKS_Y][CHUNKS_Z];
     final boolean[][] generatedColumns = new boolean[CHUNKS_X][CHUNKS_Z];
+    /** Lighting is prepared lazily for generated chunk columns near the player. */
+    final boolean[][] litColumns = new boolean[CHUNKS_X][CHUNKS_Z];
+    boolean bulkWorldGeneration = false;
+    boolean loadingScreenActive = false;
+    int loadingTerrainDone = 0;
+    int loadingTerrainTarget = 1;
     long worldSeed = 0;
 
     // Komorki gdzie juz raz wygenerowano wioske - zapobiega ponownemu spawnowi villagerow.
@@ -336,12 +342,16 @@ public class MinecraftGL {
 
     /** Upgrade old saves where an unopened, empty chest had no tile-entity entry. */
     void registerMissingChestTileEntities() {
-        for (int bx = 0; bx < WORLD_X; bx++) {
-            for (int by = 0; by < WORLD_Y; by++) {
-                for (int bz = 0; bz < WORLD_Z; bz++) {
-                    if ((world[bx][by][bz] & 0xff) != CHEST) continue;
-                    chestIdsAt(bx, by, bz);
-                    chestCountsAt(bx, by, bz);
+        for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) {
+            if (!generatedColumns[cx][cz]) continue;
+            int minX = cx * CHUNK, minZ = cz * CHUNK;
+            for (int bx = minX; bx < minX + CHUNK; bx++) {
+                for (int by = 0; by < WORLD_Y; by++) {
+                    for (int bz = minZ; bz < minZ + CHUNK; bz++) {
+                        if ((world[bx][by][bz] & 0xff) != CHEST) continue;
+                        chestIdsAt(bx, by, bz);
+                        chestCountsAt(bx, by, bz);
+                    }
                 }
             }
         }
@@ -567,10 +577,14 @@ public class MinecraftGL {
         // Postprocess init WYLACZONY - zawiesza render pipeline
         // (klasy PostProcessManager + shadery zostaja w kodzie ale nieuzywane)
         fontTexture = createFontTexture();
+        renderLoadingScreen(0.20, "Wczytywanie tekstur...");
         // Ladowanie tekstur narzedzi (kilofy, siekiery, miecze, motyki)
         craft3dgl.ui.ToolTextures.load();
+        renderLoadingScreen(0.42, "Budowanie modeli przedmiotow...");
         craft3dgl.ui.ToolMeshBuilder.load();
+        renderLoadingScreen(0.64, "Wczytywanie interfejsu...");
         craft3dgl.ui.GuiTextures.load();
+        renderLoadingScreen(0.78, "Uruchamianie renderera...");
         // Minecraft 1.12 dynamic 16x16 fixed-function lightmap.
         try {
             gameRenderer.init();
@@ -584,6 +598,66 @@ public class MinecraftGL {
                 for (int cz = 0; cz < CHUNKS_Z; cz++) chunks[cx][cy][cz] = new Chunk();
             }
         }
+        renderLoadingScreen(1.0, "Gotowe");
+    }
+
+    /** Responsive Minecraft-style startup/world loading screen. */
+    void renderLoadingScreen(double progress, String status) {
+        if (window == NULL || fontRenderer == null) return;
+        progress = clamp(progress, 0.0, 1.0);
+        glfwPollEvents();
+        glViewport(0, 0, width, height);
+        org.lwjgl.opengl.GL20.glUseProgram(0);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_FOG);
+        glDisable(GL_CULL_FACE);
+        glDisable(GL_ALPHA_TEST);
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        glOrtho(0, width, height, 0, -1, 1);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+        drawPrettyMenuBackground();
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDisable(GL_TEXTURE_2D);
+        glColor4f(0f, 0f, 0f, 0.56f);
+        quad(0, 0, width, height);
+        glDisable(GL_BLEND);
+
+        String logo = "CRAFT3D";
+        float logoScale = Math.max(1.5f, Math.min(3.0f, width / 430.0f));
+        int logoW = FontRenderer.textWidth(logo, logoScale);
+        drawTextDark(logo, width / 2 - logoW / 2 + 3, height / 2 - 108 + 3, logoScale);
+        drawText(logo, width / 2 - logoW / 2, height / 2 - 108, logoScale);
+
+        String message = status == null ? "" : status;
+        int messageW = FontRenderer.textWidth(message, 0.86f);
+        drawText(message, width / 2 - messageW / 2, height / 2 - 18, 0.86f);
+
+        int barW = Math.min(520, Math.max(240, width - 180));
+        int barH = 14;
+        int barX = width / 2 - barW / 2;
+        int barY = height / 2 + 18;
+        glDisable(GL_TEXTURE_2D);
+        glColor3f(0.08f, 0.08f, 0.08f); quad(barX - 2, barY - 2, barW + 4, barH + 4);
+        glColor3f(0.34f, 0.34f, 0.34f); quad(barX, barY, barW, barH);
+        glColor3f(0.45f, 0.78f, 0.22f); quad(barX, barY, (int)Math.round(barW * progress), barH);
+        String percent = (int)Math.round(progress * 100.0) + "%";
+        int percentW = FontRenderer.textWidth(percent, 0.68f);
+        drawText(percent, width / 2 - percentW / 2, barY + 25, 0.68f);
+        glfwSwapBuffers(window);
+
+        // Leave the context in the baseline state expected by render().
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.08f);
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(true);
+        glEnable(GL_FOG);
+        glColor4f(1f, 1f, 1f, 1f);
     }
 
     int createFontTexture() {
@@ -600,45 +674,57 @@ public class MinecraftGL {
     int shadeColor(int rgb, double mul) { return TextureAtlas.shadeColor(rgb, mul); }
 
     void generateWorld(long seed) {
-        clearWorld();
         worldSeed = seed;
-        for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) generatedColumns[cx][cz] = false;
+        for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) {
+            generatedColumns[cx][cz] = false;
+            litColumns[cx][cz] = false;
+        }
         waterQueue.clear();
         animals.clear();
         villagers.clear();
         spawnedVillageCells.clear();
-        int spawnCx = (WORLD_X / 2) / CHUNK;
-        int spawnCz = (WORLD_Z / 2) / CHUNK;
-        generateChunksAround(spawnCx, spawnCz, 5, 9999);
-        // Znajdz spawn na ladzie - jesli srodek to ocean, szukamy najblizszego ladu w spirali
-        int spawnX = WORLD_X / 2;
-        int spawnZ = WORLD_Z / 2;
-        int foundX = -1, foundZ = -1;
+
+        loadingScreenActive = true;
+        loadingTerrainDone = 0;
+        loadingTerrainTarget = 121; // initial 11x11 area; extra land chunks remain at this stage
+        bulkWorldGeneration = true;
+        renderLoadingScreen(0.08, "Tworzenie terenu...");
+
+        // Find nearby land by biome before generating blocks, so an ocean at
+        // the world centre does not make us build a second, unused spawn area.
+        int centerX = WORLD_X / 2;
+        int centerZ = WORLD_Z / 2;
+        int foundX = centerX, foundZ = centerZ;
         outer:
-        for (int r = 0; r < 80 && foundX < 0; r++) {
+        for (int r = 0; r < 80; r++) {
             for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
                 if (Math.abs(dx) != r && Math.abs(dz) != r && r > 0) continue;
-                int tx = spawnX + dx * 8;
-                int tz = spawnZ + dz * 8;
+                int tx = centerX + dx * 8;
+                int tz = centerZ + dz * 8;
                 if (tx < 5 || tz < 5 || tx >= WORLD_X - 5 || tz >= WORLD_Z - 5) continue;
-                int b = craft3dgl.world.BiomeGenerator.biomeAt(tx, tz, worldSeed);
-                if (b != BIOME_OCEAN && b != BIOME_RIVER && b != BIOME_BEACH) {
-                    foundX = tx; foundZ = tz;
+                int biome = craft3dgl.world.BiomeGenerator.biomeAt(tx, tz, worldSeed);
+                if (biome != BIOME_OCEAN && biome != BIOME_RIVER && biome != BIOME_BEACH) {
+                    foundX = tx;
+                    foundZ = tz;
                     break outer;
                 }
             }
         }
-        if (foundX > 0) {
-            // Sprawdz czy chunk juz wygenerowany, jesli nie - wygeneruj
-            int fcx = clampInt(foundX / CHUNK, 0, CHUNKS_X - 1);
-            int fcz = clampInt(foundZ / CHUNK, 0, CHUNKS_Z - 1);
-            generateChunksAround(fcx, fcz, 3, 9999);
-            x = foundX + 0.5;
-            z = foundZ + 0.5;
-            int sy = findSurfaceSpawnY(foundX, foundZ);
-            y = sy + 2;
-            System.out.println("[Spawn] Ladny spawn na ladzie: " + foundX + "," + foundZ + " y=" + sy);
-        }
+
+        int landCx = clampInt(foundX / CHUNK, 0, CHUNKS_X - 1);
+        int landCz = clampInt(foundZ / CHUNK, 0, CHUNKS_Z - 1);
+        generateChunksAround(landCx, landCz, 5, 9999);
+        bulkWorldGeneration = false;
+
+        int[] safe = findSafePlayerSpawn(foundX, foundZ, 48);
+        x = safe[0] + 0.5;
+        y = safe[1];
+        z = safe[2] + 0.5;
+        clearSpawnVegetation(safe[0], safe[1], safe[2]);
+        System.out.println("[Spawn] Bezpieczny spawn na ladzie: " + safe[0] + "," + safe[2] + " y=" + safe[1]);
+
+        renderLoadingScreen(0.57, "Obliczanie oswietlenia...");
+        rebuildLightAround((int)Math.floor(x) / CHUNK, (int)Math.floor(z) / CHUNK, 6);
         markAllChunksDirty();
     }
 
@@ -701,9 +787,18 @@ public class MinecraftGL {
         addTallGrassInChunk(minX, minZ, maxX, maxZ, localHeights, localBiomes);
         spawnAnimalsInChunk(minX, minZ, maxX, maxZ, localHeights, localBiomes);
         // Uwaga: spawnVillagersInChunk USUNIETY - villagerzy spawnuja sie tylko w wioskach (raz).
-        // Rebuild oswietlenia w tym chunku i sasiadach (BFS potrzebuje contextu)
-        if (lightEngine != null) lightEngine.rebuildRegion(minX, minZ, maxX - 1, maxZ - 1);
+        // During initial generation one combined light rebuild is much cheaper
+        // than rebuilding the same padded neighbourhood for every column.
+        if (lightEngine != null && !bulkWorldGeneration) {
+            lightEngine.rebuildRegion(minX, minZ, maxX - 1, maxZ - 1);
+            litColumns[cx][cz] = true;
+        }
         markChunkColumnDirty(cx, cz);
+        if (loadingScreenActive && bulkWorldGeneration) {
+            loadingTerrainDone++;
+            double part = Math.min(1.0, loadingTerrainDone / (double)Math.max(1, loadingTerrainTarget));
+            renderLoadingScreen(0.10 + part * 0.44, "Tworzenie terenu...");
+        }
     }
 
     int terrainHeightAt(int wx, int wz, int biome, long seed) { return BiomeGenerator.terrainHeightAt(wx, wz, biome, seed); }
@@ -801,20 +896,94 @@ public class MinecraftGL {
     void makePineTree(int x, int y, int z, Random rand) { TreeGenerator.makePineTree(x, y, z, rand, treeBlockSetter); }
 
     void spawnPlayer() {
-        int centerX = WORLD_X / 2, centerZ = WORLD_Z / 2;
-        int bestX = centerX, bestZ = centerZ, bestY = -1;
-        for (int r = 0; r < 45 && bestY < 0; r++) {
-            for (int dx = -r; dx <= r && bestY < 0; dx++) for (int dz = -r; dz <= r && bestY < 0; dz++) {
-                int sx = centerX + dx, sz = centerZ + dz;
-                if (sx < 2 || sz < 2 || sx >= WORLD_X - 2 || sz >= WORLD_Z - 2) continue;
-                int sy = findSurfaceSpawnY(sx, sz);
-                if (sy > 0) { bestX = sx; bestZ = sz; bestY = sy; }
+        int[] safe = findSafePlayerSpawn(WORLD_X / 2, WORLD_Z / 2, 64);
+        x = safe[0] + 0.5;
+        y = safe[1];
+        z = safe[2] + 0.5;
+        clearSpawnVegetation(safe[0], safe[1], safe[2]);
+    }
+
+    /** Finds solid ground with two replaceable blocks above it. */
+    int[] findSafePlayerSpawn(int centerX, int centerZ, int radius) {
+        for (int pass = 0; pass < 2; pass++) {
+            for (int r = 0; r <= radius; r++) {
+                for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
+                    if (r > 0 && Math.abs(dx) != r && Math.abs(dz) != r) continue;
+                    int sx = centerX + dx, sz = centerZ + dz;
+                    if (sx < 2 || sz < 2 || sx >= WORLD_X - 2 || sz >= WORLD_Z - 2) continue;
+                    int sy = playerSpawnYAt(sx, sz, pass == 0);
+                    if (sy > 0) return new int[]{sx, sy, sz};
+                }
             }
         }
-        if (bestY < 0) bestY = WATER_LEVEL + 5;
-        x = bestX + 0.5;
-        y = bestY;
-        z = bestZ + 0.5;
+
+        // Last-resort grass platform: never return y=-1 or spawn in water/void.
+        int sx = clampInt(centerX, 3, WORLD_X - 4);
+        int sz = clampInt(centerZ, 3, WORLD_Z - 4);
+        int sy = Math.min(WORLD_Y - 3, WATER_LEVEL + 4);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            world[sx + dx][sy - 1][sz + dz] = (byte)GRASS;
+            world[sx + dx][sy][sz + dz] = (byte)AIR;
+            world[sx + dx][sy + 1][sz + dz] = (byte)AIR;
+        }
+        return new int[]{sx, sy, sz};
+    }
+
+    int playerSpawnYAt(int sx, int sz, boolean requireGrass) {
+        for (int groundY = WORLD_Y - 3; groundY >= 1; groundY--) {
+            int ground = world[sx][groundY][sz] & 0xff;
+            if (requireGrass && ground != GRASS) continue;
+            if (!requireGrass && craft3dgl.world.LightEngine.lightOpacity(ground) < 15) continue;
+            if (ground == CHEST || ground == CRAFTING_TABLE) continue;
+            int feet = world[sx][groundY + 1][sz] & 0xff;
+            int head = world[sx][groundY + 2][sz] & 0xff;
+            if (isSpawnReplaceable(feet) && isSpawnReplaceable(head)) return groundY + 1;
+        }
+        return -1;
+    }
+
+    boolean isSpawnReplaceable(int id) {
+        return id == AIR || id == TALL_GRASS
+                || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3;
+    }
+
+    void clearSpawnVegetation(int sx, int sy, int sz) {
+        if (inWorld(sx, sy, sz) && isSpawnReplaceable(world[sx][sy][sz] & 0xff)) world[sx][sy][sz] = (byte)AIR;
+        if (inWorld(sx, sy + 1, sz) && isSpawnReplaceable(world[sx][sy + 1][sz] & 0xff)) world[sx][sy + 1][sz] = (byte)AIR;
+    }
+
+    void rebuildLightAround(int centerCx, int centerCz, int radius) {
+        if (lightEngine == null) return;
+        int minCx = Math.max(0, centerCx - radius);
+        int maxCx = Math.min(CHUNKS_X - 1, centerCx + radius);
+        int minCz = Math.max(0, centerCz - radius);
+        int maxCz = Math.min(CHUNKS_Z - 1, centerCz + radius);
+        lightEngine.rebuildRegion(minCx * CHUNK, minCz * CHUNK,
+                Math.min(WORLD_X - 1, (maxCx + 1) * CHUNK - 1),
+                Math.min(WORLD_Z - 1, (maxCz + 1) * CHUNK - 1));
+        for (int cx = minCx; cx <= maxCx; cx++) for (int cz = minCz; cz <= maxCz; cz++) {
+            if (generatedColumns[cx][cz]) litColumns[cx][cz] = true;
+        }
+    }
+
+    /** Lazily prepares one old/save-game column as it enters render distance. */
+    void ensureLightingAroundPlayer() {
+        if (lightEngine == null) return;
+        int pcx = clampInt((int)Math.floor(x) / CHUNK, 0, CHUNKS_X - 1);
+        int pcz = clampInt((int)Math.floor(z) / CHUNK, 0, CHUNKS_Z - 1);
+        for (int r = 0; r <= 6; r++) {
+            for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
+                if (r > 0 && Math.abs(dx) != r && Math.abs(dz) != r) continue;
+                int cx = pcx + dx, cz = pcz + dz;
+                if (cx < 0 || cz < 0 || cx >= CHUNKS_X || cz >= CHUNKS_Z) continue;
+                if (!generatedColumns[cx][cz] || litColumns[cx][cz]) continue;
+                int minX = cx * CHUNK, minZ = cz * CHUNK;
+                lightEngine.rebuildRegion(minX, minZ, minX + CHUNK - 1, minZ + CHUNK - 1);
+                litColumns[cx][cz] = true;
+                markChunkColumnDirty(cx, cz);
+                return;
+            }
+        }
     }
 
     // ============================================================
@@ -1115,10 +1284,12 @@ public class MinecraftGL {
             try {
                 if (inMainMenu) {
                     updateMenu();
-                    renderMenu();
+                    if (inMainMenu) renderMenu();
+                    else render();
                 } else {
                     update(dt);
                     generateChunksAroundPlayer(3);
+                    ensureLightingAroundPlayer();
                     rebuildDirtyChunks();
                     render();
                 }
@@ -1264,11 +1435,18 @@ public class MinecraftGL {
         try {
             String name = "World_" + System.currentTimeMillis();
             currentWorldName = name;
+            loadingScreenActive = true;
+            worldLoaded = false;
+            renderLoadingScreen(0.02, "Przygotowywanie nowego swiata...");
             clearAllState();
             generateWorld(System.currentTimeMillis());
-            spawnPlayer();
-            markAllChunksDirty();
             worldLoaded = true;
+            renderLoadingScreen(0.64, "Budowanie terenu...");
+            rebuildInitialChunksForLoading(5, 0.64, 0.91);
+            renderLoadingScreen(0.93, "Zapisywanie swiata...");
+            saveWorld(name);
+            renderLoadingScreen(1.0, "Dolaczanie do swiata...");
+            loadingScreenActive = false;
             inMainMenu = false;
             paused = false;
             inventoryOpen = false;
@@ -1276,8 +1454,9 @@ public class MinecraftGL {
             mouseCaptured = true;
             firstMouse = true;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            saveWorld(name);
         } catch (Throwable t) {
+            bulkWorldGeneration = false;
+            loadingScreenActive = false;
             writeCrashLog(t);
             inMainMenu = true;
             menuScreen = 0;
@@ -1310,7 +1489,10 @@ public class MinecraftGL {
         miningHit = null; miningProgress = 0; sneaking = false;
         eatingItemId = 0; eatingProgress = 0; eatingSoundStep = 0;
         waterSim.clear();
-        for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) generatedColumns[cx][cz] = false;
+        for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) {
+            generatedColumns[cx][cz] = false;
+            litColumns[cx][cz] = false;
+        }
         gameMode = GAMEMODE_SURVIVAL; flying = false;
         chatOpen = false; creativeInvOpen = false; creativeTab = 0;
         creativeSearch.setLength(0); chatInput.setLength(0); chatLog.clear();
@@ -1331,7 +1513,13 @@ public class MinecraftGL {
                 out.writeInt(WORLD_X); out.writeInt(WORLD_Y); out.writeInt(WORLD_Z);
                 out.writeDouble(x); out.writeDouble(y); out.writeDouble(z); out.writeDouble(velY);
                 out.writeDouble(yaw); out.writeDouble(pitch); out.writeInt(selectedSlot); out.writeInt(cameraMode);
-                for (int xx = 0; xx < WORLD_X; xx++) for (int yy = 0; yy < WORLD_Y; yy++) for (int zz = 0; zz < WORLD_Z; zz++) out.writeByte(world[xx][yy][zz]);
+                for (int xx = 0; xx < WORLD_X; xx++) {
+                    for (int yy = 0; yy < WORLD_Y; yy++) out.write(world[xx][yy], 0, WORLD_Z);
+                    if (loadingScreenActive && (xx & 31) == 0) {
+                        double part = (xx + 1) / (double)WORLD_X;
+                        renderLoadingScreen(0.93 + Math.min(1.0, part) * 0.06, "Zapisywanie swiata...");
+                    }
+                }
                 writeArray(out, invId); writeArray(out, invCount); writeArray(out, equipId); writeArray(out, equipCount);
                 out.writeInt(health);
                 out.writeInt(hunger);
@@ -1387,6 +1575,9 @@ public class MinecraftGL {
         try {
             File file = craft3dgl.save.SaveIO.saveFile(name);
             if (!file.isFile()) return false;
+            loadingScreenActive = true;
+            worldLoaded = false;
+            renderLoadingScreen(0.02, "Otwieranie swiata...");
             clearAllState();
             try (DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
                 int magic = in.readInt();
@@ -1395,8 +1586,33 @@ public class MinecraftGL {
                 int wx = in.readInt(), wy = in.readInt(), wz = in.readInt();
                 x = in.readDouble(); y = in.readDouble(); z = in.readDouble(); velY = in.readDouble();
                 yaw = in.readDouble(); pitch = in.readDouble(); selectedSlot = in.readInt(); cameraMode = in.readInt();
-                for (int xx = 0; xx < wx; xx++) for (int yy = 0; yy < wy; yy++) for (int zz = 0; zz < wz; zz++) {
-                    byte b = in.readByte(); if (xx < WORLD_X && yy < WORLD_Y && zz < WORLD_Z) world[xx][yy][zz] = b;
+                if (wx <= 0 || wy <= 0 || wz <= 0 || wx > 4096 || wy > 512 || wz > 4096) {
+                    throw new IOException("invalid world dimensions");
+                }
+                byte[] savedRow = new byte[wz];
+                for (int xx = 0; xx < wx; xx++) {
+                    for (int yy = 0; yy < wy; yy++) {
+                        in.readFully(savedRow);
+                        if (xx >= WORLD_X || yy >= WORLD_Y) continue;
+                        int copy = Math.min(wz, WORLD_Z);
+                        System.arraycopy(savedRow, 0, world[xx][yy], 0, copy);
+                        int cx = xx / CHUNK;
+                        for (int startZ = 0; startZ < copy; startZ += CHUNK) {
+                            int cz = startZ / CHUNK;
+                            if (generatedColumns[cx][cz]) continue;
+                            int endZ = Math.min(copy, startZ + CHUNK);
+                            for (int zz = startZ; zz < endZ; zz++) {
+                                if ((savedRow[zz] & 0xff) != AIR) {
+                                    generatedColumns[cx][cz] = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if ((xx & 15) == 0) {
+                        double part = Math.min(1.0, (xx + 1) / (double)Math.max(1, wx));
+                        renderLoadingScreen(0.07 + part * 0.39, "Wczytywanie terenu... " + (int)Math.round(part * 100.0) + "%");
+                    }
                 }
                 readArray(in, invId); readArray(in, invCount); readArray(in, equipId); readArray(in, equipCount);
                 if (in.available() >= 4) health = in.readInt();
@@ -1470,27 +1686,46 @@ public class MinecraftGL {
                 if (animals.isEmpty()) spawnAnimalsInLoadedWorld(new Random(name.hashCode()));
             }
             currentWorldName = name;
-            worldLoaded = true;
+            worldSeed = name.hashCode() * 341873128712L;
             deathScreen = false;
             deathDropsDone = false;
             if (health <= 0) health = maxHealth;
+
+            // Corrupt/old saves may contain an invalid player height. Recover
+            // near the stored position instead of entering the void.
+            if (x < 1 || z < 1 || x >= WORLD_X - 1 || z >= WORLD_Z - 1 || y < 1 || y >= WORLD_Y - 2) {
+                int[] safe = findSafePlayerSpawn(clampInt((int)x, 2, WORLD_X - 3),
+                        clampInt((int)z, 2, WORLD_Z - 3), 64);
+                x = safe[0] + 0.5;
+                y = safe[1];
+                z = safe[2] + 0.5;
+                clearSpawnVegetation(safe[0], safe[1], safe[2]);
+            }
+
+            renderLoadingScreen(0.50, "Obliczanie oswietlenia...");
+            rebuildLightAround(clampInt((int)Math.floor(x) / CHUNK, 0, CHUNKS_X - 1),
+                    clampInt((int)Math.floor(z) / CHUNK, 0, CHUNKS_Z - 1), 6);
+            renderLoadingScreen(0.59, "Przygotowywanie blokow...");
+            registerMissingChestTileEntities();
+            markAllChunksDirty();
+            rebuildInitialChunksForLoading(5, 0.61, 0.91);
+            renderLoadingScreen(0.93, "Przygotowywanie wody...");
+            seedWaterQueue();
+            worldLoaded = true;
+            renderLoadingScreen(1.0, "Dolaczanie do swiata...");
+            loadingScreenActive = false;
             inMainMenu = false;
             mouseCaptured = true;
             firstMouse = true;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) generatedColumns[cx][cz] = true;
-            // FIX: rebuild swiatla dla calego wczytanego swiata (inaczej wszystko czarne)
-            if (lightEngine != null) {
-                System.out.println("[loadWorld] rebuilding light for entire world...");
-                long t0 = System.currentTimeMillis();
-                lightEngine.rebuildRegion(0, 0, WORLD_X - 1, WORLD_Z - 1);
-                System.out.println("[loadWorld] light rebuilt in " + (System.currentTimeMillis() - t0) + "ms");
-            }
-            registerMissingChestTileEntities();
-            markAllChunksDirty();
-            seedWaterQueue();
             return true;
-        } catch (Exception e) { menuMessage = "Load error: " + e.getMessage(); return false; }
+        } catch (Throwable e) {
+            bulkWorldGeneration = false;
+            loadingScreenActive = false;
+            writeCrashLog(e);
+            menuMessage = "Load error: " + e.getMessage();
+            return false;
+        }
     }
 
     void openPauseMenu() {
@@ -4113,7 +4348,8 @@ public class MinecraftGL {
             for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range); cx++) {
                 for (int cy = 0; cy < CHUNKS_Y; cy++) {
                     for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range); cz++) {
-                        if (chunks[cx][cy][cz].leavesList != 0) order.add(new int[]{cx, cy, cz});
+                        if (generatedColumns[cx][cz] && litColumns[cx][cz]
+                                && chunks[cx][cy][cz].leavesList != 0) order.add(new int[]{cx, cy, cz});
                     }
                 }
             }
@@ -4123,6 +4359,7 @@ public class MinecraftGL {
             for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range); cx++) {
                 for (int cy = 0; cy < CHUNKS_Y; cy++) {
                     for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range); cz++) {
+                        if (!generatedColumns[cx][cz] || !litColumns[cx][cz]) continue;
                         int list = chunks[cx][cy][cz].terrainList;
                         if (list != 0) glCallList(list);
                     }
@@ -6162,9 +6399,51 @@ public class MinecraftGL {
     }
 
     void rebuildDirtyChunks() {
-        for (int cx = 0; cx < CHUNKS_X; cx++) for (int cy = 0; cy < CHUNKS_Y; cy++) for (int cz = 0; cz < CHUNKS_Z; cz++) {
-            Chunk c = chunks[cx][cy][cz];
-            if (c.dirty) rebuildChunk(cx, cy, cz);
+        // Never compile all 16,384 chunks in one frame. Besides freezing the
+        // window, that exhausted native OpenGL display-list memory on Windows.
+        int budget = 8;
+        int pcx = clampInt((int)Math.floor(x) / CHUNK, 0, CHUNKS_X - 1);
+        int pcz = clampInt((int)Math.floor(z) / CHUNK, 0, CHUNKS_Z - 1);
+        for (int r = 0; r <= 6 && budget > 0; r++) {
+            for (int dx = -r; dx <= r && budget > 0; dx++) for (int dz = -r; dz <= r && budget > 0; dz++) {
+                if (r > 0 && Math.abs(dx) != r && Math.abs(dz) != r) continue;
+                int cx = pcx + dx, cz = pcz + dz;
+                if (cx < 0 || cz < 0 || cx >= CHUNKS_X || cz >= CHUNKS_Z) continue;
+                if (!generatedColumns[cx][cz] || !litColumns[cx][cz]) continue;
+                for (int cy = 0; cy < CHUNKS_Y && budget > 0; cy++) {
+                    if (chunks[cx][cy][cz].dirty) {
+                        rebuildChunk(cx, cy, cz);
+                        budget--;
+                    }
+                }
+            }
+        }
+    }
+
+    void rebuildInitialChunksForLoading(int radius, double progressStart, double progressEnd) {
+        int pcx = clampInt((int)Math.floor(x) / CHUNK, 0, CHUNKS_X - 1);
+        int pcz = clampInt((int)Math.floor(z) / CHUNK, 0, CHUNKS_Z - 1);
+        int total = 0;
+        for (int cx = Math.max(0, pcx - radius); cx <= Math.min(CHUNKS_X - 1, pcx + radius); cx++) {
+            for (int cz = Math.max(0, pcz - radius); cz <= Math.min(CHUNKS_Z - 1, pcz + radius); cz++) {
+                if (generatedColumns[cx][cz] && litColumns[cx][cz]) total += CHUNKS_Y;
+            }
+        }
+        int done = 0;
+        for (int r = 0; r <= radius; r++) {
+            for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) {
+                if (r > 0 && Math.abs(dx) != r && Math.abs(dz) != r) continue;
+                int cx = pcx + dx, cz = pcz + dz;
+                if (cx < 0 || cz < 0 || cx >= CHUNKS_X || cz >= CHUNKS_Z) continue;
+                if (!generatedColumns[cx][cz] || !litColumns[cx][cz]) continue;
+                for (int cy = 0; cy < CHUNKS_Y; cy++) {
+                    if (chunks[cx][cy][cz].dirty) rebuildChunk(cx, cy, cz);
+                    done++;
+                }
+                double part = total == 0 ? 1.0 : Math.min(1.0, done / (double)total);
+                renderLoadingScreen(progressStart + (progressEnd - progressStart) * part,
+                        "Budowanie terenu... " + (int)Math.round(part * 100.0) + "%");
+            }
         }
     }
 
@@ -6172,6 +6451,9 @@ public class MinecraftGL {
         Chunk c = chunks[cx][cy][cz];
         if (c.terrainList == 0) c.terrainList = glGenLists(1);
         if (c.leavesList == 0) c.leavesList = glGenLists(1);
+        if (c.terrainList == 0 || c.leavesList == 0) {
+            throw new IllegalStateException("OpenGL display-list allocation failed for chunk " + cx + "," + cy + "," + cz);
+        }
         compileChunkList(cx, cy, cz, c.terrainList, false);
         compileChunkList(cx, cy, cz, c.leavesList, true);
         c.dirty = false;
@@ -6513,7 +6795,25 @@ public class MinecraftGL {
     }
 
     void seedWaterQueue() {
-        waterSim.seedFromWorld(world, WORLD_X, WORLD_Y, WORLD_Z, WATER);
+        // Seed only exposed water near the player. Queueing five neighbours for
+        // every ocean block allocated millions of tiny arrays during loading.
+        waterSim.clear();
+        int radius = 7 * CHUNK;
+        int minX = Math.max(1, (int)Math.floor(x) - radius);
+        int maxX = Math.min(WORLD_X - 2, (int)Math.floor(x) + radius);
+        int minZ = Math.max(1, (int)Math.floor(z) - radius);
+        int maxZ = Math.min(WORLD_Z - 2, (int)Math.floor(z) + radius);
+        for (int bx = minX; bx <= maxX; bx++) for (int bz = minZ; bz <= maxZ; bz++) {
+            if (!generatedColumns[bx / CHUNK][bz / CHUNK]) continue;
+            for (int by = 1; by < WORLD_Y - 1; by++) {
+                if ((world[bx][by][bz] & 0xff) != WATER) continue;
+                if ((world[bx][by - 1][bz] & 0xff) == AIR) scheduleWater(bx, by - 1, bz);
+                if ((world[bx + 1][by][bz] & 0xff) == AIR) scheduleWater(bx + 1, by, bz);
+                if ((world[bx - 1][by][bz] & 0xff) == AIR) scheduleWater(bx - 1, by, bz);
+                if ((world[bx][by][bz + 1] & 0xff) == AIR) scheduleWater(bx, by, bz + 1);
+                if ((world[bx][by][bz - 1] & 0xff) == AIR) scheduleWater(bx, by, bz - 1);
+            }
+        }
     }
 
     void scheduleWater(int x, int y, int z) {
@@ -6555,7 +6855,16 @@ public class MinecraftGL {
     }
 
     void markAllChunksDirty() {
-        for (int cx = 0; cx < CHUNKS_X; cx++) for (int cy = 0; cy < CHUNKS_Y; cy++) for (int cz = 0; cz < CHUNKS_Z; cz++) { chunks[cx][cy][cz].dirty = true; chunks[cx][cy][cz].modernDirty = true; }
+        // Uncreated columns must not allocate OpenGL display lists. The old
+        // implementation marked the whole 1024x1024 world and caused a native
+        // 0xC0000005 crash immediately after creating a world on Windows.
+        for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) {
+            if (!generatedColumns[cx][cz]) continue;
+            for (int cy = 0; cy < CHUNKS_Y; cy++) {
+                chunks[cx][cy][cz].dirty = true;
+                chunks[cx][cy][cz].modernDirty = true;
+            }
+        }
     }
 
     void markDirtyAround(int bx, int by, int bz) {

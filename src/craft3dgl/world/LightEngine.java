@@ -88,7 +88,7 @@ public final class LightEngine {
 
         // 2. Chunk.generateSkylightMap: direct sky remains 15 through air,
         // while leaves/water apply their 1.12 light-opacity values.
-        java.util.ArrayDeque<int[]> skyQ = new java.util.ArrayDeque<>();
+        IntQueue skyQ = new IntQueue();
         for (int xx = padMinX; xx <= padMaxX; xx++) {
             for (int zz = padMinZ; zz <= padMaxZ; zz++) {
                 int level = 15;
@@ -100,7 +100,7 @@ public final class LightEngine {
                     level = Math.max(0, level - opacity);
                     if (level > 0) {
                         setSky(xx, yy, zz, level);
-                        skyQ.add(new int[]{xx, yy, zz});
+                        skyQ.add(pack(xx, yy, zz));
                     }
                 }
             }
@@ -108,14 +108,14 @@ public final class LightEngine {
         propagateSky(skyQ, padMinX, padMinZ, padMaxX, padMaxZ);
 
         // 3. Block light sources
-        java.util.ArrayDeque<int[]> blQ = new java.util.ArrayDeque<>();
+        IntQueue blQ = new IntQueue();
         for (int xx = padMinX; xx <= padMaxX; xx++) {
             for (int zz = padMinZ; zz <= padMaxZ; zz++) {
                 for (int yy = 0; yy < WORLD_Y; yy++) {
                     int em = emissionOf(world[xx][yy][zz] & 0xff);
                     if (em > 0) {
                         setBlockLight(xx, yy, zz, em);
-                        blQ.add(new int[]{xx, yy, zz});
+                        blQ.add(pack(xx, yy, zz));
                     }
                 }
             }
@@ -123,40 +123,44 @@ public final class LightEngine {
         propagateBlockLight(blQ, padMinX, padMinZ, padMaxX, padMaxZ);
     }
 
-    private void propagateSky(java.util.ArrayDeque<int[]> q, int minX, int minZ, int maxX, int maxZ) {
-        int[][] dirs = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+    private void propagateSky(IntQueue q, int minX, int minZ, int maxX, int maxZ) {
+        final int[] dx = {1, -1, 0, 0, 0, 0};
+        final int[] dy = {0, 0, 1, -1, 0, 0};
+        final int[] dz = {0, 0, 0, 0, 1, -1};
         while (!q.isEmpty()) {
-            int[] p = q.poll();
-            int cx = p[0], cy = p[1], cz = p[2];
+            int packed = q.poll();
+            int cx = unpackX(packed), cy = unpackY(packed), cz = unpackZ(packed);
             int cur = getSky(cx, cy, cz);
             if (cur <= 1) continue;
-            for (int[] dv : dirs) {
-                int nx = cx + dv[0], ny = cy + dv[1], nz = cz + dv[2];
+            for (int i = 0; i < 6; i++) {
+                int nx = cx + dx[i], ny = cy + dy[i], nz = cz + dz[i];
                 if (nx < minX || nx > maxX || nz < minZ || nz > maxZ || ny < 0 || ny >= WORLD_Y) continue;
                 int nid = world[nx][ny][nz] & 0xff;
                 int opacity = lightOpacity(nid);
                 if (opacity >= 15) continue;
                 // Direct level-15 skylight does not decay down through air.
                 int attenuation = Math.max(1, opacity);
-                int newLv = (dv[1] == -1 && cur == 15 && opacity == 0)
+                int newLv = (dy[i] == -1 && cur == 15 && opacity == 0)
                         ? 15 : Math.max(0, cur - attenuation);
                 if (newLv > getSky(nx, ny, nz)) {
                     setSky(nx, ny, nz, newLv);
-                    if (newLv > 1) q.add(new int[]{nx, ny, nz});
+                    if (newLv > 1) q.add(pack(nx, ny, nz));
                 }
             }
         }
     }
 
-    private void propagateBlockLight(java.util.ArrayDeque<int[]> q, int minX, int minZ, int maxX, int maxZ) {
-        int[][] dirs = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+    private void propagateBlockLight(IntQueue q, int minX, int minZ, int maxX, int maxZ) {
+        final int[] dx = {1, -1, 0, 0, 0, 0};
+        final int[] dy = {0, 0, 1, -1, 0, 0};
+        final int[] dz = {0, 0, 0, 0, 1, -1};
         while (!q.isEmpty()) {
-            int[] p = q.poll();
-            int cx = p[0], cy = p[1], cz = p[2];
+            int packed = q.poll();
+            int cx = unpackX(packed), cy = unpackY(packed), cz = unpackZ(packed);
             int cur = getBlockLight(cx, cy, cz);
             if (cur <= 1) continue;
-            for (int[] dv : dirs) {
-                int nx = cx + dv[0], ny = cy + dv[1], nz = cz + dv[2];
+            for (int i = 0; i < 6; i++) {
+                int nx = cx + dx[i], ny = cy + dy[i], nz = cz + dz[i];
                 if (nx < minX || nx > maxX || nz < minZ || nz > maxZ || ny < 0 || ny >= WORLD_Y) continue;
                 int nid = world[nx][ny][nz] & 0xff;
                 int opacity = lightOpacity(nid);
@@ -164,9 +168,46 @@ public final class LightEngine {
                 int newLv = Math.max(0, cur - Math.max(1, opacity));
                 if (newLv > getBlockLight(nx, ny, nz)) {
                     setBlockLight(nx, ny, nz, newLv);
-                    if (newLv > 1) q.add(new int[]{nx, ny, nz});
+                    if (newLv > 1) q.add(pack(nx, ny, nz));
                 }
             }
+        }
+    }
+
+    // WORLD_X/Z are 1024 and WORLD_Y is 64, so one position fits in 26 bits.
+    private static int pack(int x, int y, int z) { return (x << 16) | (y << 10) | z; }
+    private static int unpackX(int p) { return (p >>> 16) & 1023; }
+    private static int unpackY(int p) { return (p >>> 10) & 63; }
+    private static int unpackZ(int p) { return p & 1023; }
+
+    /** Allocation-free primitive FIFO used by light propagation. */
+    private static final class IntQueue {
+        private int[] values = new int[65536];
+        private int head;
+        private int size;
+
+        boolean isEmpty() { return size == 0; }
+
+        void add(int value) {
+            if (size == values.length) grow();
+            values[(head + size) & (values.length - 1)] = value;
+            size++;
+        }
+
+        int poll() {
+            int value = values[head];
+            head = (head + 1) & (values.length - 1);
+            size--;
+            return value;
+        }
+
+        private void grow() {
+            int[] larger = new int[values.length << 1];
+            int first = Math.min(size, values.length - head);
+            System.arraycopy(values, head, larger, 0, first);
+            System.arraycopy(values, 0, larger, first, size - first);
+            values = larger;
+            head = 0;
         }
     }
 
