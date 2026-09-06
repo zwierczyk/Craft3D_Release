@@ -83,7 +83,7 @@ public class RenderStates {
     public static final RenderStateShard ALPHA_TEST_CUTOUT = new RenderStateShard("alpha_test_cutout",
         () -> {
             GL11.glEnable(GL11.GL_ALPHA_TEST);
-            GL11.glAlphaFunc(GL11.GL_GREATER, 0.5f);
+            GL11.glAlphaFunc(GL11.GL_GREATER, 0.1f);
         },
         () -> GL11.glDisable(GL11.GL_ALPHA_TEST));
 

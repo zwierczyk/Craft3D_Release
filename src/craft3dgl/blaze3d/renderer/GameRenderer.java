@@ -25,11 +25,6 @@ public class GameRenderer {
     private craft3dgl.blaze3d.shadow.LightmapTexture lightmapTexture;
     /** MC-style animated water texture 16x16 (32 klatki). */
     private craft3dgl.blaze3d.shadow.WaterTexture waterTexture;
-    /** Shadow render target (2048x2048 depth-only FBO). */
-    private craft3dgl.blaze3d.shadow.ShadowRenderTarget shadowTarget;
-    /** Feature flag - cienie ON/OFF. */
-    public static boolean shadowsEnabled = true;   // Default ON - cienie zawsze aktywne
-
     public static GameRenderer getInstance() { return INSTANCE; }
 
     private GameRenderer() {}
@@ -47,7 +42,6 @@ public class GameRenderer {
         loadShader("rendertype_solid");
         loadShader("rendertype_cutout");
         loadShader("rendertype_translucent");
-        loadShader("shadow_depth");
         // Twz white 1x1 lightmap texture (fallback dla Sampler2 dopoki nie damy prawdziwej)
         try {
             whiteLightmapTexId = org.lwjgl.opengl.GL11.glGenTextures();
@@ -66,12 +60,6 @@ public class GameRenderer {
         } catch (Throwable t) {
             System.err.println("[GameRenderer] lightmap create failed: " + t);
         }
-        // Etap 8: shadow target 2048x2048
-        try {
-            shadowTarget = new craft3dgl.blaze3d.shadow.ShadowRenderTarget(2048);
-        } catch (Throwable t) {
-            System.err.println("[GameRenderer] shadowTarget create failed: " + t);
-        }
         // MC-style 16x16 lightmap texture (dynamiczna, update per frame)
         try {
             lightmapTexture = new craft3dgl.blaze3d.shadow.LightmapTexture();
@@ -87,12 +75,10 @@ public class GameRenderer {
         System.out.println("[GameRenderer] init() DONE - " + shaders.size() + " shaders loaded");
     }
 
-    public craft3dgl.blaze3d.shadow.ShadowRenderTarget getShadowTarget() { return shadowTarget; }
     public craft3dgl.blaze3d.shadow.LightmapTexture getLightmapTexture() { return lightmapTexture; }
     public int getLightmapTexId() { return lightmapTexture != null ? lightmapTexture.getTextureId() : whiteLightmapTexId; }
     public craft3dgl.blaze3d.shadow.WaterTexture getWaterTexture() { return waterTexture; }
     public int getWaterTexId() { return waterTexture != null ? waterTexture.getTextureId() : 0; }
-    public craft3dgl.blaze3d.shaders.EffectInstance shadowDepthShader() { return getShader("shadow_depth"); }
 
     private void _dummy() {
     }

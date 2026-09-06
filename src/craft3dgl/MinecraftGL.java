@@ -139,16 +139,6 @@ public class MinecraftGL {
     /** Night vision effect - do kiedy aktywny (System.currentTimeMillis()). 0 = nieaktywny. */
     long nightVisionExpireMs = 0L;
 
-    /** Zwraca "efektywny" dayTint uwzgledniajac night vision effect. */
-    float effectiveDayTint() {
-        float dayTint = 0.20f + currentDayMult * 0.80f;
-        if (nightVisionExpireMs > System.currentTimeMillis()) {
-            // Night vision: podnies dayTint do minimum 0.85 (widac wszystko jak w dzien)
-            return Math.max(dayTint, 0.85f);
-        }
-        return dayTint;
-    }
-
     /** True gdy jest aktywny efekt night vision. */
     boolean hasNightVision() {
         return nightVisionExpireMs > System.currentTimeMillis();
@@ -243,12 +233,7 @@ public class MinecraftGL {
     boolean mWasDown = false;
     boolean escWasDown = false;
     boolean f5WasDown = false;
-    /** Postprocess manager - shader effects na calym ekranie (F4 toggle, F6 next). */
-    final craft3dgl.blaze3d.pipeline.PostProcessManager postProcess = new craft3dgl.blaze3d.pipeline.PostProcessManager();
-    boolean f4WasDown = false;
-    boolean f6WasDown = false;
     boolean f7WasDown = false;
-    boolean f8WasDown = false;
     boolean f9WasDown = false;
     boolean f10WasDown = false;
     boolean f12WasDown = false;
@@ -286,7 +271,7 @@ public class MinecraftGL {
     static float foodTuneScale = 0.400f;
     long lastTuneLogTime = 0;
     /** Etap 6+ - modern MC-style renderer (RenderType + core shadery). F7 toggle. */
-    static boolean USE_MODERN_RENDERER = true;   // Etap 8+: modern renderer + shadows = default ON
+    static boolean USE_MODERN_RENDERER = true;   // shader terrain renderer is the default
     /** GameRenderer - laduje core shadery raz na start. */
     final craft3dgl.blaze3d.renderer.GameRenderer gameRenderer = craft3dgl.blaze3d.renderer.GameRenderer.getInstance();
     boolean menuMouseWasDown = false;
@@ -418,6 +403,11 @@ public class MinecraftGL {
     double ambientSmokeTimer = 0;
 
     double swingTimer = 0;
+    /** EntityPlayer.ticksSinceLastSwing, advanced at 20 ticks per second. */
+    double ticksSinceLastSwing = 1000.0;
+    int lastAttackItemId = Integer.MIN_VALUE;
+    /** Sprint is cancelled briefly after a charged sprint-knockback attack. */
+    double sprintDisableTimer = 0.0;
     double walkPhase = 0;
     double lastX = 0, lastZ = 0;
     /** Yaw ciala - dogania yaw kamery powoli (MC renderYawOffset). */
@@ -1301,7 +1291,9 @@ public class MinecraftGL {
         creativeSearch.setLength(0); chatInput.setLength(0); chatLog.clear();
         doorMeta.clear();
         chestIds.clear(); chestCounts.clear(); chestOpen = false;
-        swingTimer = 0; walkPhase = 0; lastPosInit = false; wasInWater = false;
+        swingTimer = 0; ticksSinceLastSwing = 1000.0;
+        lastAttackItemId = Integer.MIN_VALUE; sprintDisableTimer = 0.0;
+        walkPhase = 0; lastPosInit = false; wasInWater = false;
         particleSystem.clear();
     }
 
@@ -1338,14 +1330,14 @@ public class MinecraftGL {
                     out.writeInt(a.type);
                     out.writeDouble(a.x); out.writeDouble(a.y); out.writeDouble(a.z);
                     out.writeDouble(a.yaw);
-                    out.writeInt(a.health);
+                    out.writeInt(Math.max(0, Math.round(a.health)));
                 }
                 out.writeInt(villagers.size());
                 for (VillagerGL v : villagers) {
                     out.writeDouble(v.x); out.writeDouble(v.y); out.writeDouble(v.z);
                     out.writeDouble(v.yaw);
                     out.writeInt(v.profession);
-                    out.writeInt(v.health);
+                    out.writeInt(Math.max(0, Math.round(v.health)));
                     out.writeDouble(v.homeX);
                     out.writeDouble(v.homeZ);
                     out.writeBoolean(v.hasHome);
@@ -1619,6 +1611,9 @@ public class MinecraftGL {
             return;
         }
 
+        ticksSinceLastSwing += dt * 20.0;
+        if (sprintDisableTimer > 0.0) sprintDisableTimer = Math.max(0.0, sprintDisableTimer - dt);
+
         // CHEST OPEN - obsluga zamykania (ESC, E, klikniecia w sloty)
         if (chestOpen) {
             handleChestInput(left, right);
@@ -1696,25 +1691,7 @@ public class MinecraftGL {
 
         if (f5Key && !f5WasDown) { cameraMode = (cameraMode + 1) % 3; sound.playClick(); }
         f5WasDown = f5Key;
-        // F4 - toggle postprocess, F6 - next shader
-        boolean f4Key = glfwGetKey(window, GLFW_KEY_F4) == GLFW_PRESS;
-        boolean f6Key = glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS;
-        if (f4Key && !f4WasDown) {
-            // Lazy init przy pierwszym F4
-            if (!postProcess.isReady() && !postProcess.hasFatalError()) {
-                postProcess.init(width, height);
-            }
-            postProcess.toggle();
-            sound.playClick();
-        }
-        if (f6Key && !f6WasDown) {
-            if (postProcess.isReady()) {
-                postProcess.nextShader();
-                sound.playClick();
-            }
-        }
-        f4WasDown = f4Key;
-        f6WasDown = f6Key;
+        // Non-vanilla full-screen post-processing is intentionally unavailable.
         // F7 - toggle modern MC-style renderer (Etap 6+)
         boolean f7Key = glfwGetKey(window, GLFW_KEY_F7) == GLFW_PRESS;
         if (f7Key && !f7WasDown) {
@@ -1724,15 +1701,6 @@ public class MinecraftGL {
             sound.playClick();
         }
         f7WasDown = f7Key;
-        // F8 - toggle shadows (dziala tylko gdy F7=ON bo cienie sa w modern shader)
-        boolean f8Key = glfwGetKey(window, GLFW_KEY_F8) == GLFW_PRESS;
-        if (f8Key && !f8WasDown) {
-            craft3dgl.blaze3d.renderer.GameRenderer.shadowsEnabled = !craft3dgl.blaze3d.renderer.GameRenderer.shadowsEnabled;
-            System.out.println("[F8] shadowsEnabled=" + craft3dgl.blaze3d.renderer.GameRenderer.shadowsEnabled);
-            sound.playClick();
-        }
-        f8WasDown = f8Key;
-
         // F9 - toggle TOOL tuning mode (miecze/kilofy/siekiery/motyki)
         boolean f9Key = glfwGetKey(window, GLFW_KEY_F9) == GLFW_PRESS;
         if (f9Key && !f9WasDown) {
@@ -1867,6 +1835,13 @@ public class MinecraftGL {
             if (glfwGetKey(window, GLFW_KEY_1 + i) == GLFW_PRESS) selectedSlot = i;
         }
         updateHotbarScroll();
+        int attackItemId = selectedItemId();
+        if (lastAttackItemId == Integer.MIN_VALUE) lastAttackItemId = attackItemId;
+        else if (lastAttackItemId != attackItemId) {
+            // EntityPlayer resets cooled strength when the held item type changes.
+            lastAttackItemId = attackItemId;
+            ticksSinceLastSwing = 0.0;
+        }
 
         if (qKey && !qWasDown) dropSelected(glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
         qWasDown = qKey;
@@ -1887,7 +1862,8 @@ public class MinecraftGL {
         boolean wantsSneak = shiftDownH && !flying && !inWater;
         sneaking = wantsSneak || !playerFreeAtHeight(x, y, z, PLAYER_HEIGHT);
         // MC controls: Shift is sneak, Ctrl is sprint. Sneaking must never speed up walking.
-        boolean sprinting = !flying && ctrlDownH && !sneaking && forward > 0.0 && !inWater;
+        boolean sprinting = !flying && sprintDisableTimer <= 0.0
+                && ctrlDownH && !sneaking && forward > 0.0 && !inWater;
         double speed;
         if (flying) {
             speed = ctrlDownH ? 22.0 : 12.0;
@@ -2062,15 +2038,26 @@ public class MinecraftGL {
         Hit hit = castRay(blockReach());
         double animalReach = hit.hit ? Math.min(entityReach(), hit.dist) : entityReach();
         AnimalGL targetAnimal = findTargetAnimal(animalReach);
-        VillagerGL targetVillager = findTargetVillager(entityReach());
+        VillagerGL targetVillager = findTargetVillager(animalReach);
+        if (targetAnimal != null && targetVillager != null) {
+            double animalDistance = entityRayDistance(targetAnimal.x, targetAnimal.y, targetAnimal.z,
+                    craft3dgl.entities.EntityConstants.ANIMAL_RADIUS,
+                    craft3dgl.entities.EntityConstants.animalHeight(targetAnimal.type), animalReach);
+            double villagerDistance = entityRayDistance(targetVillager.x, targetVillager.y, targetVillager.z,
+                    craft3dgl.entities.EntityConstants.VILLAGER_RADIUS,
+                    craft3dgl.entities.EntityConstants.VILLAGER_HEIGHT, animalReach);
+            if (animalDistance < villagerDistance) targetVillager = null;
+            else targetAnimal = null;
+        }
 
+        boolean movingTooFastToSweep = Math.hypot(dx, dz) / Math.max(0.001, dt) * 0.05 >= 0.1;
         if (left && targetVillager != null && !leftWasDown) {
-            attackVillager(targetVillager);
+            attackVillager(targetVillager, sprinting, inWater, movingTooFastToSweep);
             swingTimer = 1.0;
             miningHit = null;
             miningProgress = 0;
         } else if (left && targetAnimal != null && !leftWasDown) {
-            attackAnimal(targetAnimal);
+            attackAnimal(targetAnimal, sprinting, inWater, movingTooFastToSweep);
             swingTimer = 1.0;
             miningHit = null;
             miningProgress = 0;
@@ -2869,6 +2856,8 @@ public class MinecraftGL {
         if (villagers.isEmpty()) return;
         for (VillagerGL v : villagers) {
             v.age += dt;
+            v.hurtResistantTime = Math.max(0.0, v.hurtResistantTime - dt);
+            v.hurtTime = Math.max(0.0, v.hurtTime - dt);
             v.walkTimer -= dt;
             if (v.walkTimer <= 0) {
                 v.walkTimer = 1.6 + random.nextDouble() * 3.0;
@@ -2909,8 +2898,8 @@ public class MinecraftGL {
                 v.vy -= 20 * dt;
                 if (v.vy < -24) v.vy = -24;
             }
-            double nx = v.x + v.vx * dt;
-            double nz = v.z + v.vz * dt;
+            double nx = v.x + (v.vx + v.knockbackX) * dt;
+            double nz = v.z + (v.vz + v.knockbackZ) * dt;
             boolean bx = !villagerFreeAt(nx, v.y, v.z);
             boolean bz = !villagerFreeAt(v.x, v.y, nz);
 
@@ -2942,8 +2931,8 @@ public class MinecraftGL {
             if (bx && !v.onGround && villagerFreeAt(nx, v.y, v.z)) bx = false;
             if (bz && !v.onGround && villagerFreeAt(v.x, v.y, nz)) bz = false;
 
-            if (!bx) v.x = nx;
-            if (!bz) v.z = nz;
+            if (!bx) v.x = nx; else v.knockbackX = 0.0;
+            if (!bz) v.z = nz; else v.knockbackZ = 0.0;
 
             // Ruch pionowy
             double ny = v.y + v.vy * dt;
@@ -2967,6 +2956,12 @@ public class MinecraftGL {
                     }
                 }
             }
+
+            double knockbackDrag = Math.pow(v.onGround ? 0.546 : 0.91, dt * 20.0);
+            v.knockbackX *= knockbackDrag;
+            v.knockbackZ *= knockbackDrag;
+            if (Math.abs(v.knockbackX) < 0.01) v.knockbackX = 0.0;
+            if (Math.abs(v.knockbackZ) < 0.01) v.knockbackZ = 0.0;
 
             if (v.y < -3) { v.health = 0; }
             smoothVillager(v, dt);
@@ -2996,26 +2991,167 @@ public class MinecraftGL {
         double ox = x, oy = y + eyeHeight(), oz = z;
         VillagerGL best = null;
         double bestT = maxDist;
-        for (VillagerGL v : villagers) {
-            double cx = v.x, cy = v.y + 0.9, cz = v.z;
-            double vx = cx - ox, vy = cy - oy, vz = cz - oz;
-            double t = vx * dx + vy * dy + vz * dz;
-            if (t < 0 || t > bestT) continue;
-            double px = ox + dx * t, py = oy + dy * t, pz = oz + dz * t;
-            double dist = Math.sqrt((cx - px)*(cx - px) + (cy - py)*(cy - py) + (cz - pz)*(cz - pz));
-            if (dist < 0.55) { best = v; bestT = t; }
+        double radius = craft3dgl.entities.EntityConstants.VILLAGER_RADIUS;
+        double height = craft3dgl.entities.EntityConstants.VILLAGER_HEIGHT;
+        for (VillagerGL villager : villagers) {
+            double[] interval = {0.0, bestT};
+            if (!clipRayAxis(ox, dx, villager.x - radius, villager.x + radius, interval)) continue;
+            if (!clipRayAxis(oy, dy, villager.y, villager.y + height, interval)) continue;
+            if (!clipRayAxis(oz, dz, villager.z - radius, villager.z + radius, interval)) continue;
+            if (interval[0] <= bestT) {
+                best = villager;
+                bestT = interval[0];
+            }
         }
         return best;
     }
 
-    void attackVillager(VillagerGL v) {
-        int dmg = craft3dgl.combat.DamageSystem.villagerDamage(selectedItemId());
-        v.health -= dmg;
-        sound.playHurt();
-        v.vx += Math.sin(yaw) * 1.8;
-        v.vz += Math.cos(yaw) * 1.8;
-        v.targetYaw = Math.atan2(v.vx, v.vz);
+    void attackVillager(VillagerGL villager, boolean sprinting, boolean inWater,
+                        boolean movingTooFastToSweep) {
+        craft3dgl.combat.DamageSystem.AttackResult attack =
+                beginMeleeAttack(sprinting, inWater, movingTooFastToSweep);
+        craft3dgl.combat.DamageSystem.DamageResult damage =
+                craft3dgl.combat.DamageSystem.resolveDamage(attack.damage,
+                        villager.hurtResistantTime, villager.lastDamage);
+        villager.hurtResistantTime = damage.hurtResistantTime;
+        villager.lastDamage = damage.lastDamage;
+        if (!damage.accepted) {
+            sound.playAttackNoDamage();
+            return;
+        }
+
+        villager.health -= damage.appliedDamage;
+        if (damage.newHurt) {
+            villager.hurtTime = craft3dgl.combat.DamageSystem.HURT_FLASH_SECONDS;
+            knockBackVillager(villager, 0.4f);
+            sound.playHurt();
+        }
+        if (attack.sprintKnockback) {
+            knockBackVillager(villager, 0.5f);
+            sprintDisableTimer = 0.05;
+        }
+        double villagerWidth = craft3dgl.entities.EntityConstants.VILLAGER_RADIUS * 2.0;
+        double villagerHeight = craft3dgl.entities.EntityConstants.VILLAGER_HEIGHT;
+        spawnEntityHitHearts(villager.x, villager.y, villager.z, villagerWidth, villagerHeight);
+        if (attack.critical) spawnCriticalHitParticles(
+                villager.x, villager.y, villager.z, villagerWidth, villagerHeight);
         craft3dgl.ui.Crosshair.triggerHit();
+        playMeleeAttackSound(attack);
+        if (attack.sweeping) performSweepAttack(villager.x, villager.y, villager.z, null, villager);
+    }
+
+    craft3dgl.combat.DamageSystem.AttackResult beginMeleeAttack(boolean sprinting, boolean inWater,
+                                                               boolean movingTooFastToSweep) {
+        int item = selectedItemId();
+        boolean falling = !onGround && velY < 0.0;
+        craft3dgl.combat.DamageSystem.AttackResult attack =
+                craft3dgl.combat.DamageSystem.createAttack(ticksSinceLastSwing, item,
+                        sprinting, falling, onGround, inWater, flying, movingTooFastToSweep);
+        ticksSinceLastSwing = 0.0;
+        return attack;
+    }
+
+    void playMeleeAttackSound(craft3dgl.combat.DamageSystem.AttackResult attack) {
+        if (attack.critical) sound.playAttackCritical();
+        else if (attack.sprintKnockback) sound.playAttackKnockback();
+        else if (attack.sweeping) sound.playAttackSweep();
+        else if (attack.strong) sound.playAttackStrong();
+        else sound.playAttackWeak();
+    }
+
+    void knockBackVillager(VillagerGL villager, float strength) {
+        double totalX = villager.vx + villager.knockbackX;
+        double totalZ = villager.vz + villager.knockbackZ;
+        craft3dgl.combat.DamageSystem.KnockbackResult result =
+                craft3dgl.combat.DamageSystem.knockBack(totalX, villager.vy, totalZ,
+                        villager.onGround, strength, x - villager.x, z - villager.z);
+        villager.knockbackX = result.motionX - villager.vx;
+        villager.knockbackZ = result.motionZ - villager.vz;
+        villager.vy = result.motionY;
+        if (result.motionY > 0.0) villager.onGround = false;
+    }
+
+    void performSweepAttack(double targetX, double targetY, double targetZ,
+                            AnimalGL primaryAnimal, VillagerGL primaryVillager) {
+        java.util.ArrayList<AnimalGL> nearbyAnimals = new java.util.ArrayList<>(animals);
+        for (AnimalGL animal : nearbyAnimals) {
+            if (animal == primaryAnimal || !insideSweepArea(animal.x, animal.y, animal.z,
+                    targetX, targetY, targetZ)) continue;
+            knockBackAnimal(animal, 0.4f); // explicit EntityPlayer sweep push
+            craft3dgl.combat.DamageSystem.DamageResult result =
+                    craft3dgl.combat.DamageSystem.resolveDamage(1.0f,
+                            animal.hurtResistantTime, animal.lastDamage);
+            animal.hurtResistantTime = result.hurtResistantTime;
+            animal.lastDamage = result.lastDamage;
+            if (!result.accepted) continue;
+            animal.health -= result.appliedDamage;
+            // A fresh hurt additionally performs normal EntityLivingBase knockback.
+            if (result.newHurt) {
+                animal.hurtTime = craft3dgl.combat.DamageSystem.HURT_FLASH_SECONDS;
+                knockBackAnimal(animal, 0.4f);
+                playAnimalHurtSound(animal);
+            }
+            startAnimalPanic(animal);
+            spawnEntityHitHearts(animal.x, animal.y, animal.z,
+                    craft3dgl.entities.EntityConstants.ANIMAL_RADIUS * 2.0,
+                    craft3dgl.entities.EntityConstants.animalHeight(animal.type));
+            if (animal.health <= 0.0f && animals.contains(animal)) killAnimal(animal);
+        }
+        java.util.ArrayList<VillagerGL> nearbyVillagers = new java.util.ArrayList<>(villagers);
+        for (VillagerGL villager : nearbyVillagers) {
+            if (villager == primaryVillager || !insideSweepArea(villager.x, villager.y, villager.z,
+                    targetX, targetY, targetZ)) continue;
+            knockBackVillager(villager, 0.4f); // explicit EntityPlayer sweep push
+            craft3dgl.combat.DamageSystem.DamageResult result =
+                    craft3dgl.combat.DamageSystem.resolveDamage(1.0f,
+                            villager.hurtResistantTime, villager.lastDamage);
+            villager.hurtResistantTime = result.hurtResistantTime;
+            villager.lastDamage = result.lastDamage;
+            if (!result.accepted) continue;
+            villager.health -= result.appliedDamage;
+            if (result.newHurt) {
+                villager.hurtTime = craft3dgl.combat.DamageSystem.HURT_FLASH_SECONDS;
+                knockBackVillager(villager, 0.4f);
+                sound.playHurt();
+            }
+            spawnEntityHitHearts(villager.x, villager.y, villager.z,
+                    craft3dgl.entities.EntityConstants.VILLAGER_RADIUS * 2.0,
+                    craft3dgl.entities.EntityConstants.VILLAGER_HEIGHT);
+        }
+    }
+
+    boolean insideSweepArea(double entityX, double entityY, double entityZ,
+                            double targetX, double targetY, double targetZ) {
+        double dxTarget = entityX - targetX;
+        double dzTarget = entityZ - targetZ;
+        double dxPlayer = entityX - x;
+        double dzPlayer = entityZ - z;
+        return dxTarget * dxTarget + dzTarget * dzTarget <= 2.25
+                && dxPlayer * dxPlayer + dzPlayer * dzPlayer < 9.0
+                && Math.abs(entityY - targetY) <= 1.25;
+    }
+
+    void spawnEntityHitHearts(double entityX, double entityY, double entityZ,
+                              double width, double height) {
+        for (int i = 0; i < 3; i++) {
+            double px = entityX + (random.nextDouble() * 2.0 - 1.0) * width;
+            double py = entityY + 0.5 + random.nextDouble() * height;
+            double pz = entityZ + (random.nextDouble() * 2.0 - 1.0) * width;
+            particleSystem.add(Particle.heart(random, px, py, pz));
+        }
+    }
+
+    void spawnCriticalHitParticles(double entityX, double entityY, double entityZ,
+                                   double width, double height) {
+        for (int i = 0; i < 15; i++) {
+            double px = entityX + (random.nextDouble() * 2.0 - 1.0) * width;
+            double py = entityY + random.nextDouble() * height;
+            double pz = entityZ + (random.nextDouble() * 2.0 - 1.0) * width;
+            particleSystem.add(Particle.crit(random, px, py, pz,
+                    random.nextGaussian() * 0.02,
+                    random.nextGaussian() * 0.02,
+                    random.nextGaussian() * 0.02));
+        }
     }
 
     void openVillagerTrade(VillagerGL v) {
@@ -3090,7 +3226,7 @@ public class MinecraftGL {
     void drawVillagers() {
         // Rysujemy per-villager zeby ustawic swiatlo z bloku pod nim
         for (VillagerGL v : villagers) {
-            applyEntityLight(v.x, v.y + 0.9, v.z);
+            applyEntityLight(v.x, v.y + 0.9, v.z, v.hurtTime > 0.0);
             java.util.ArrayList<VillagerGL> one = new java.util.ArrayList<>(1);
             one.add(v);
             craft3dgl.entities.VillagerRenderer.drawAll(one);
@@ -3099,11 +3235,19 @@ public class MinecraftGL {
         glColor4f(1,1,1,1);
     }
 
-    /** Ustawia tint (mnoznik RGB) na CuboidHelper zgodnie z LightEngine dla encji.
-     *  MC-style: entity jest ciemna w nocy tak samo jak teren, ale ma mniejsze minimum
-     *  zeby nie byla calkowicie czarna. dayTint tak samo jak bloki - 0.20 + dayMult*0.80. */
+    /** Applies combined sky/block lighting and the LivingBase hurt overlay to a model. */
     void applyEntityLight(double ex, double ey, double ez) {
-        if (lightEngine == null) { craft3dgl.ui.CuboidHelper.clearTint(); glColor4f(1,1,1,1); return; }
+        applyEntityLight(ex, ey, ez, false);
+    }
+
+    void applyEntityLight(double ex, double ey, double ez, boolean hurtFlash) {
+        if (lightEngine == null) {
+            if (hurtFlash) craft3dgl.ui.CuboidHelper.setTint(1.0f, 0.25f, 0.25f);
+            else craft3dgl.ui.CuboidHelper.clearTint();
+            glColor4f(1.0f, hurtFlash ? 0.25f : 1.0f,
+                    hurtFlash ? 0.25f : 1.0f, 1.0f);
+            return;
+        }
         int bx = clampInt((int) Math.floor(ex), 0, WORLD_X - 1);
         int by = clampInt((int) Math.floor(ey), 0, WORLD_Y - 1);
         int bz = clampInt((int) Math.floor(ez), 0, WORLD_Z - 1);
@@ -3111,15 +3255,13 @@ public class MinecraftGL {
         int by2 = Math.min(by + 1, WORLD_Y - 1);
         float s2 = lightEngine.sampleShade(bx, by2, bz, currentDayMult);
         float s = Math.max(s1, s2);
-        // MC-style day/night tint - to samo co bloki w drawModernChunkLayer
-        float dayTint = effectiveDayTint();
-        // Zastosuj dayTint jako mnoznik + minimum floor zeby nie bylo calkiem czarno
-        s = s * dayTint;
-        // Night vision boost dla entities - podnies do min 0.85
+        // sampleShade already includes sky-day brightness; do not multiply it twice.
+        // Night vision boost for fixed-function entity models.
         float entityAmbientMin = hasNightVision() ? 0.85f : (0.10f + currentDayMult * 0.20f);
         s = Math.max(entityAmbientMin, s);
-        craft3dgl.ui.CuboidHelper.setTint(s, s, s);
-        glColor4f(s, s, s, 1f);
+        float greenBlue = hurtFlash ? s * 0.25f : s;
+        craft3dgl.ui.CuboidHelper.setTint(s, greenBlue, greenBlue);
+        glColor4f(s, greenBlue, greenBlue, 1f);
     }
 
 
@@ -3132,6 +3274,8 @@ public class MinecraftGL {
             double previousX = a.x;
             double previousZ = a.z;
             a.age += dt;
+            a.hurtResistantTime = Math.max(0.0, a.hurtResistantTime - dt);
+            a.hurtTime = Math.max(0.0, a.hurtTime - dt);
             boolean inWater = animalInWater(a);
             boolean panicking = a.panicTimer > 0;
             if (panicking) {
@@ -3183,8 +3327,8 @@ public class MinecraftGL {
                 if (inWater && a.vy < 1.2) a.vy += 6.0 * dt;
             }
 
-            double nx = a.x + a.vx * dt;
-            double nz = a.z + a.vz * dt;
+            double nx = a.x + (a.vx + a.knockbackX) * dt;
+            double nz = a.z + (a.vz + a.knockbackZ) * dt;
             boolean blockedX = !animalFreeAt(a, nx, a.y, a.z);
             boolean blockedZ = !animalFreeAt(a, a.x, a.y, nz);
 
@@ -3197,8 +3341,8 @@ public class MinecraftGL {
                 }
             }
 
-            if (!blockedX) a.x = nx;
-            if (!blockedZ) a.z = nz;
+            if (!blockedX) a.x = nx; else a.knockbackX = 0.0;
+            if (!blockedZ) a.z = nz; else a.knockbackZ = 0.0;
 
             if (panicking && blockedX && blockedZ && a.onGround && a.panicRedirect <= 0) {
                 double bestX = 0, bestZ = 0;
@@ -3254,6 +3398,12 @@ public class MinecraftGL {
                     a.onGround = false;
                 }
             }
+
+            double knockbackDrag = Math.pow(a.onGround ? 0.546 : 0.91, dt * 20.0);
+            a.knockbackX *= knockbackDrag;
+            a.knockbackZ *= knockbackDrag;
+            if (Math.abs(a.knockbackX) < 0.01) a.knockbackX = 0.0;
+            if (Math.abs(a.knockbackZ) < 0.01) a.knockbackZ = 0.0;
 
             if (a.y < -3) {
                 int sy = -1;
@@ -3379,6 +3529,19 @@ public class MinecraftGL {
         return best;
     }
 
+    double entityRayDistance(double entityX, double entityY, double entityZ,
+                             double radius, double entityHeight, double maxDistance) {
+        double cp = Math.cos(pitch);
+        double dx = Math.sin(yaw) * cp;
+        double dy = Math.sin(pitch);
+        double dz = Math.cos(yaw) * cp;
+        double[] interval = {0.0, maxDistance};
+        if (!clipRayAxis(x, dx, entityX - radius, entityX + radius, interval)) return Double.POSITIVE_INFINITY;
+        if (!clipRayAxis(y + eyeHeight(), dy, entityY, entityY + entityHeight, interval)) return Double.POSITIVE_INFINITY;
+        if (!clipRayAxis(z, dz, entityZ - radius, entityZ + radius, interval)) return Double.POSITIVE_INFINITY;
+        return interval[0];
+    }
+
     /** Slab test jednej osi dla ray kontra AABB. */
     static boolean clipRayAxis(double origin, double direction, double min, double max,
                                double[] interval) {
@@ -3391,51 +3554,91 @@ public class MinecraftGL {
         return interval[1] >= interval[0];
     }
 
-    /** Preserve Craft3D's animal-hit cue, now rendered with MCP ParticleHeart sprite 80. */
-    void spawnAnimalHitHearts(AnimalGL animal) {
-        double width = craft3dgl.entities.EntityConstants.ANIMAL_RADIUS * 2.0;
-        double height = craft3dgl.entities.EntityConstants.animalHeight(animal.type);
-        for (int i = 0; i < 3; i++) {
-            double px = animal.x + (random.nextDouble() * 2.0 - 1.0) * width;
-            double py = animal.y + 0.5 + random.nextDouble() * height;
-            double pz = animal.z + (random.nextDouble() * 2.0 - 1.0) * width;
-            particleSystem.add(Particle.heart(random, px, py, pz));
+    void attackAnimal(AnimalGL animal, boolean sprinting, boolean inWater,
+                      boolean movingTooFastToSweep) {
+        craft3dgl.combat.DamageSystem.AttackResult attack =
+                beginMeleeAttack(sprinting, inWater, movingTooFastToSweep);
+        craft3dgl.combat.DamageSystem.DamageResult damage =
+                craft3dgl.combat.DamageSystem.resolveDamage(attack.damage,
+                        animal.hurtResistantTime, animal.lastDamage);
+        animal.hurtResistantTime = damage.hurtResistantTime;
+        animal.lastDamage = damage.lastDamage;
+        if (!damage.accepted) {
+            sound.playAttackNoDamage();
+            return;
         }
+
+        animal.health -= damage.appliedDamage;
+        if (damage.newHurt) {
+            animal.hurtTime = craft3dgl.combat.DamageSystem.HURT_FLASH_SECONDS;
+            knockBackAnimal(animal, 0.4f);
+            playAnimalHurtSound(animal);
+        }
+        if (attack.sprintKnockback) {
+            knockBackAnimal(animal, 0.5f);
+            sprintDisableTimer = 0.05;
+        }
+        double animalWidth = craft3dgl.entities.EntityConstants.ANIMAL_RADIUS * 2.0;
+        double animalHeight = craft3dgl.entities.EntityConstants.animalHeight(animal.type);
+        spawnEntityHitHearts(animal.x, animal.y, animal.z, animalWidth, animalHeight);
+        if (attack.critical) spawnCriticalHitParticles(
+                animal.x, animal.y, animal.z, animalWidth, animalHeight);
+        craft3dgl.ui.Crosshair.triggerHit();
+        playMeleeAttackSound(attack);
+        startAnimalPanic(animal);
+        if (attack.sweeping) performSweepAttack(animal.x, animal.y, animal.z, animal, null);
+
+        if (animal.health <= 0.0f) killAnimal(animal);
     }
 
-    void attackAnimal(AnimalGL a) {
-        int item = selectedItemId();
-        int dmg = craft3dgl.combat.DamageSystem.meleeDamage(item);
-        a.health -= dmg;
-        // Dzwiek zalezny od typu zwierzat
-        if (a.type == AnimalGL.COW) sound.playCow();
-        else if (a.type == AnimalGL.PIG) sound.playPig();
-        else if (a.type == AnimalGL.SHEEP) sound.playSheep();
+    void knockBackAnimal(AnimalGL animal, float strength) {
+        double totalX = animal.vx + animal.knockbackX;
+        double totalZ = animal.vz + animal.knockbackZ;
+        craft3dgl.combat.DamageSystem.KnockbackResult result =
+                craft3dgl.combat.DamageSystem.knockBack(totalX, animal.vy, totalZ,
+                        animal.onGround, strength, x - animal.x, z - animal.z);
+        animal.knockbackX = result.motionX - animal.vx;
+        animal.knockbackZ = result.motionZ - animal.vz;
+        animal.vy = result.motionY;
+        if (result.motionY > 0.0) animal.onGround = false;
+    }
+
+    void playAnimalHurtSound(AnimalGL animal) {
+        if (animal.type == AnimalGL.COW) sound.playCow();
+        else if (animal.type == AnimalGL.PIG) sound.playPig();
+        else if (animal.type == AnimalGL.SHEEP) sound.playSheep();
         else sound.playAnimal();
-        craft3dgl.ui.Crosshair.triggerHit();
-        spawnAnimalHitHearts(a);
-        double fx = Math.sin(yaw), fz = Math.cos(yaw);
-        a.panicTimer = 5.0;
-        a.panicRecalc = 0;
-        a.panicRedirect = 0;
-        double ddx = a.x - x;
-        double ddz = a.z - z;
-        double len = Math.sqrt(ddx * ddx + ddz * ddz);
-        if (len > 0.0001) { a.panicDirX = ddx / len; a.panicDirZ = ddz / len; }
-        else { a.panicDirX = -fx; a.panicDirZ = -fz; }
-        a.targetYaw = Math.atan2(a.panicDirX, a.panicDirZ);
-        if (a.health <= 0) {
-            int drop = a.type == AnimalGL.COW ? ITEM_BEEF : a.type == AnimalGL.SHEEP ? ITEM_MUTTON : ITEM_PORK;
-            spawnDrop(a.x, a.y + 0.45, a.z, drop, 1 + random.nextInt(3));
-            // Spawn 1-3 XP orbs (MC daje 1-3 z animals)
-            int orbCount = 1 + random.nextInt(3);
-            int totalXp = 1 + random.nextInt(3);
-            for (int i = 0; i < orbCount; i++) {
-                int xpPerOrb = Math.max(1, totalXp / orbCount);
-                xpOrbs.add(new craft3dgl.entities.ExperienceOrb(a.x, a.y + 0.6, a.z, xpPerOrb));
-            }
-            animals.remove(a);
+    }
+
+    void startAnimalPanic(AnimalGL animal) {
+        double awayX = animal.x - x;
+        double awayZ = animal.z - z;
+        double length = Math.sqrt(awayX * awayX + awayZ * awayZ);
+        if (length > 0.0001) {
+            animal.panicDirX = awayX / length;
+            animal.panicDirZ = awayZ / length;
+        } else {
+            animal.panicDirX = -Math.sin(yaw);
+            animal.panicDirZ = -Math.cos(yaw);
         }
+        animal.panicTimer = craft3dgl.entities.EntityConstants.ANIMAL_PANIC_TIME;
+        animal.panicRecalc = 0.0;
+        animal.panicRedirect = 0.0;
+        animal.targetYaw = Math.atan2(animal.panicDirX, animal.panicDirZ);
+    }
+
+    void killAnimal(AnimalGL animal) {
+        int drop = animal.type == AnimalGL.COW ? ITEM_BEEF
+                : animal.type == AnimalGL.SHEEP ? ITEM_MUTTON : ITEM_PORK;
+        spawnDrop(animal.x, animal.y + 0.45, animal.z, drop, 1 + random.nextInt(3));
+        int orbCount = 1 + random.nextInt(3);
+        int totalXp = 1 + random.nextInt(3);
+        for (int i = 0; i < orbCount; i++) {
+            int xpPerOrb = Math.max(1, totalXp / orbCount);
+            xpOrbs.add(new craft3dgl.entities.ExperienceOrb(
+                    animal.x, animal.y + 0.6, animal.z, xpPerOrb));
+        }
+        animals.remove(animal);
     }
 
     void updateXpOrbs(double dt) {
@@ -3510,7 +3713,7 @@ public class MinecraftGL {
 
     void drawAnimals() {
         for (AnimalGL a : animals) {
-            applyEntityLight(a.x, a.y + 0.5, a.z);
+            applyEntityLight(a.x, a.y + 0.5, a.z, a.hurtTime > 0.0);
             java.util.ArrayList<AnimalGL> one = new java.util.ArrayList<>(1);
             one.add(a);
             craft3dgl.entities.AnimalRenderer.drawAll(one);
@@ -3688,9 +3891,8 @@ public class MinecraftGL {
     }
 
     void render() {
-        postProcess.begin();
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        // Gradientowe niebo (rysowane w tle przed 3D)
+        // Vanilla-style overworld sky behind the 3D passes.
         double dayFraction = (gameTime / 240.0) % 1.0;
         currentDayMult = craft3dgl.world.LightEngine.skyDayMultiplier(dayFraction);
         craft3dgl.world.SkyRenderer.drawSky(width, height, pitch, dayFraction);
@@ -3713,32 +3915,33 @@ public class MinecraftGL {
         setupCamera();
         drawClouds();
         glBindTexture(GL_TEXTURE_2D, textureAtlas);
-        if (!USE_MODERN_RENDERER) drawChunks(false);
+
+        // Minecraft 1.12 render order: opaque/cutout terrain, entities, translucent
+        // terrain, then particles. Rendering particles before terrain erased their colour.
+        if (gameRenderer.getLightmapTexture() != null) {
+            gameRenderer.getLightmapTexture().update(currentDayMult, hasNightVision() ? 0.90f : 0f);
+        }
+        if (USE_MODERN_RENDERER) drawModernChunks(false);
+        else drawChunks(false);
+
         drawDroppedItems3D();
         drawAnimals();
         drawXpOrbs();
         drawVillagers();
-        if (cameraMode != 0) { applyEntityLight(x, y + 0.9, z); drawPlayerModel(); craft3dgl.ui.CuboidHelper.clearTint(); glColor4f(1,1,1,1); }
+        if (cameraMode != 0) {
+            applyEntityLight(x, y + 0.9, z);
+            drawPlayerModel();
+            craft3dgl.ui.CuboidHelper.clearTint();
+            glColor4f(1,1,1,1);
+        }
         if (!USE_MODERN_RENDERER) drawChunks(true);
         drawDoors();
+        if (USE_MODERN_RENDERER) drawModernChunks(true);
         drawParticles();
+
         Hit hit = castRay(blockReach());
         if (hit.hit) drawFaceOutline(hit);
-        // Update dynamic lightmap 16x16 z aktualnym czasem dnia
-        if (gameRenderer.getLightmapTexture() != null) {
-            gameRenderer.getLightmapTexture().update(currentDayMult, hasNightVision() ? 0.90f : 0f);
-        }
-        // SHADOW PASS - render sceny z widoku slonca do shadow map (przed main scene!)
-        float[] cachedLightMatrix = null;
-        // FIX: wylacz shadow pass tylko gdy KAMERA gracza jest pod woda (nie na powierzchni)
-        boolean cameraInWater = isWaterAt(x, y + eyeHeight(), z);
-        if (USE_MODERN_RENDERER && craft3dgl.blaze3d.renderer.GameRenderer.shadowsEnabled && !cameraInWater) {
-            cachedLightMatrix = renderShadowPass();
-        }
-        // MAIN PASS - cale chunki przez rendertype_solid/cutout/translucent shadery
-        if (USE_MODERN_RENDERER) drawModernChunks(cachedLightMatrix);
         drawUI();
-                postProcess.end(width, height);
     }
 
     void setupProjection() {
@@ -3746,7 +3949,7 @@ public class MinecraftGL {
         glLoadIdentity();
         double near = 0.05;
         double far = 180.0;
-        double fov = Math.toRadians(72);
+        double fov = Math.toRadians(70); // vanilla 1.12 normal-FOV default
         double top = near * Math.tan(fov / 2.0);
         double right = top * ((double) width / height);
         glFrustum(-right, right, -top, top, near, far);
@@ -4246,19 +4449,14 @@ public class MinecraftGL {
     private boolean modernChunksErrLogged = false;
     private long modernChunksFrameCount = 0;
 
-    /**
-     * Etap 7b: rysuje wszystkie chunki wokol gracza przez rendertype_solid shader.
-     * Skanuje bloki, uzywa faceVisible+tileFor+atlasU0/V0 (te same funkcje co stary renderer),
-     * ale zamiast glVertex3d wysyla wierzcholki do BufferBuilder z BLOCK format.
-     * Pokazuje wszystko na X+80 (offset) zeby stary chunk renderer NIE nakladal sie na nowy
-     * -> mozna porownac oba renderery jednoczesnie.
-     */
-    void drawModernChunks(float[] lightMatrix) {
+    /** Draws either the opaque/cutout terrain pass or the later translucent pass. */
+    void drawModernChunks(boolean translucentOnly) {
         try {
             craft3dgl.blaze3d.shaders.EffectInstance solidSh = gameRenderer.rendertypeSolidShader();
             craft3dgl.blaze3d.shaders.EffectInstance cutoutSh = gameRenderer.rendertypeCutoutShader();
             craft3dgl.blaze3d.shaders.EffectInstance translucentSh = gameRenderer.rendertypeTranslucentShader();
-            if (solidSh == null) return;
+            if (!translucentOnly && solidSh == null) return;
+            if (translucentOnly && translucentSh == null) return;
 
             org.lwjgl.opengl.GL11.glPushAttrib(org.lwjgl.opengl.GL11.GL_ALL_ATTRIB_BITS);
             org.lwjgl.opengl.GL11.glPushClientAttrib(org.lwjgl.opengl.GL11.GL_CLIENT_ALL_ATTRIB_BITS);
@@ -4273,39 +4471,41 @@ public class MinecraftGL {
             int rebuildBudget = 2;
             int rebuiltCount = 0;
 
-            // FAZA 1: REBUILD BRUDNYCH CHUNKOW - buduje mesh dla WSZYSTKICH 3 layerow naraz
-            for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range) && rebuildBudget > 0; cx++) {
-                for (int cy = 0; cy < CHUNKS_Y && rebuildBudget > 0; cy++) {
-                    for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range) && rebuildBudget > 0; cz++) {
-                        Chunk ch = chunks[cx][cy][cz];
-                        if (!ch.modernDirty && ch.modernVboSolid != null) continue;
-                        // SOLID
-                        bb.begin(org.lwjgl.opengl.GL11.GL_QUADS, fmt);
-                        int qs = addChunkToModernMesh(bb, cx, cy, cz, MODERN_LAYER_SOLID);
-                        bb.end();
-                        if (ch.modernVboSolid == null) ch.modernVboSolid = new craft3dgl.blaze3d.vertex.VertexBuffer(fmt);
-                        ch.modernVboSolid.upload(bb.getBuffer());
-                        ch.modernVertexCountSolid = qs * 4;
-                        bb.clear();
-                        // CUTOUT
-                        bb.begin(org.lwjgl.opengl.GL11.GL_QUADS, fmt);
-                        int qc = addChunkToModernMesh(bb, cx, cy, cz, MODERN_LAYER_CUTOUT);
-                        bb.end();
-                        if (ch.modernVboCutout == null) ch.modernVboCutout = new craft3dgl.blaze3d.vertex.VertexBuffer(fmt);
-                        ch.modernVboCutout.upload(bb.getBuffer());
-                        ch.modernVertexCountCutout = qc * 4;
-                        bb.clear();
-                        // TRANSLUCENT
-                        bb.begin(org.lwjgl.opengl.GL11.GL_QUADS, fmt);
-                        int qt = addChunkToModernMesh(bb, cx, cy, cz, MODERN_LAYER_TRANSLUCENT);
-                        bb.end();
-                        if (ch.modernVboTranslucent == null) ch.modernVboTranslucent = new craft3dgl.blaze3d.vertex.VertexBuffer(fmt);
-                        ch.modernVboTranslucent.upload(bb.getBuffer());
-                        ch.modernVertexCountTranslucent = qt * 4;
-                        bb.clear();
-                        ch.modernDirty = false;
-                        rebuiltCount++;
-                        rebuildBudget--;
+            // Rebuild all three meshes once, before the opaque pass.
+            if (!translucentOnly) {
+                for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range) && rebuildBudget > 0; cx++) {
+                    for (int cy = 0; cy < CHUNKS_Y && rebuildBudget > 0; cy++) {
+                        for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range) && rebuildBudget > 0; cz++) {
+                            Chunk ch = chunks[cx][cy][cz];
+                            if (!ch.modernDirty && ch.modernVboSolid != null) continue;
+                            // SOLID
+                            bb.begin(org.lwjgl.opengl.GL11.GL_QUADS, fmt);
+                            int qs = addChunkToModernMesh(bb, cx, cy, cz, MODERN_LAYER_SOLID);
+                            bb.end();
+                            if (ch.modernVboSolid == null) ch.modernVboSolid = new craft3dgl.blaze3d.vertex.VertexBuffer(fmt);
+                            ch.modernVboSolid.upload(bb.getBuffer());
+                            ch.modernVertexCountSolid = qs * 4;
+                            bb.clear();
+                            // CUTOUT
+                            bb.begin(org.lwjgl.opengl.GL11.GL_QUADS, fmt);
+                            int qc = addChunkToModernMesh(bb, cx, cy, cz, MODERN_LAYER_CUTOUT);
+                            bb.end();
+                            if (ch.modernVboCutout == null) ch.modernVboCutout = new craft3dgl.blaze3d.vertex.VertexBuffer(fmt);
+                            ch.modernVboCutout.upload(bb.getBuffer());
+                            ch.modernVertexCountCutout = qc * 4;
+                            bb.clear();
+                            // TRANSLUCENT
+                            bb.begin(org.lwjgl.opengl.GL11.GL_QUADS, fmt);
+                            int qt = addChunkToModernMesh(bb, cx, cy, cz, MODERN_LAYER_TRANSLUCENT);
+                            bb.end();
+                            if (ch.modernVboTranslucent == null) ch.modernVboTranslucent = new craft3dgl.blaze3d.vertex.VertexBuffer(fmt);
+                            ch.modernVboTranslucent.upload(bb.getBuffer());
+                            ch.modernVertexCountTranslucent = qt * 4;
+                            bb.clear();
+                            ch.modernDirty = false;
+                            rebuiltCount++;
+                            rebuildBudget--;
+                        }
                     }
                 }
             }
@@ -4323,30 +4523,29 @@ public class MinecraftGL {
 
             int drawnSolid = 0, drawnCutout = 0, drawnTranslucent = 0;
 
-            // FAZA 2a: SOLID pass (z shadow map jesli enabled)
-            drawnSolid = drawModernChunkLayer(solidSh, craft3dgl.blaze3d.renderer.RenderTypes.SOLID,
-                pcx, pcz, range, fmt, atlasTex, lightmapTex, fogC, MODERN_LAYER_SOLID, lightMatrix);
-            // FAZA 2b: CUTOUT pass
-            if (cutoutSh != null) {
-                drawnCutout = drawModernChunkLayer(cutoutSh, craft3dgl.blaze3d.renderer.RenderTypes.CUTOUT,
-                    pcx, pcz, range, fmt, atlasTex, lightmapTex, fogC, MODERN_LAYER_CUTOUT, null);
-            }
-            // FAZA 2c: TRANSLUCENT pass (WODA) - podmieniamy Sampler0 na animowana water texture
-            if (translucentSh != null) {
+            if (!translucentOnly) {
+                // Vanilla order begins with opaque and cutout terrain.
+                drawnSolid = drawModernChunkLayer(solidSh, craft3dgl.blaze3d.renderer.RenderTypes.SOLID,
+                    pcx, pcz, range, fmt, atlasTex, lightmapTex, fogC, MODERN_LAYER_SOLID);
+                if (cutoutSh != null) {
+                    drawnCutout = drawModernChunkLayer(cutoutSh, craft3dgl.blaze3d.renderer.RenderTypes.CUTOUT,
+                        pcx, pcz, range, fmt, atlasTex, lightmapTex, fogC, MODERN_LAYER_CUTOUT);
+                }
+            } else {
+                // Water/translucent terrain is rendered after opaque entities, before particles.
                 int waterTex = gameRenderer.getWaterTexId();
                 if (waterTex > 0) gameRenderer.getWaterTexture().update();
                 drawnTranslucent = drawModernChunkLayer(translucentSh, craft3dgl.blaze3d.renderer.RenderTypes.TRANSLUCENT,
-                    pcx, pcz, range, fmt, waterTex > 0 ? waterTex : atlasTex, lightmapTex, fogC, MODERN_LAYER_TRANSLUCENT, null);
+                    pcx, pcz, range, fmt, waterTex > 0 ? waterTex : atlasTex, lightmapTex, fogC, MODERN_LAYER_TRANSLUCENT);
             }
             craft3dgl.blaze3d.vertex.VertexBuffer.unbind();
 
-            if ((modernChunksFrameCount++ % 1800) == 0) {   // co ~30s
+            if (!translucentOnly && (modernChunksFrameCount++ % 1800) == 0) {   // co ~30s
                 System.out.println("[ModernChunks] rebuilt=" + rebuiltCount
                     + " solid=" + drawnSolid + " cutout=" + drawnCutout + " translucent=" + drawnTranslucent
                     + " frame=" + modernChunksFrameCount);
             }
 
-            org.lwjgl.opengl.GL20.glUseProgram(0);
             org.lwjgl.opengl.GL20.glUseProgram(0);
             craft3dgl.blaze3d.renderer.RenderSystem.setShader(null);
 
@@ -4369,41 +4568,28 @@ public class MinecraftGL {
                               craft3dgl.blaze3d.renderer.RenderType type,
                               int pcx, int pcz, int range,
                               craft3dgl.blaze3d.vertex.VertexFormat fmt,
-                              int atlasTex, int lightmapTex, float[] fogC, int layer,
-                              float[] lightMatrix) {
+                              int atlasTex, int lightmapTex, float[] fogC, int layer) {
         type.setupRenderState();
         shader.setSampler("Sampler0", Integer.valueOf(atlasTex));
         shader.setSampler("Sampler1", Integer.valueOf(lightmapTex));
         craft3dgl.blaze3d.renderer.RenderSystem.setShader(shader);
-        // MC-style day/night tint - mnoznik globalny przez ColorModulator uniform.
-        // Night vision effect podnosi to do min 0.85 (widac w jaskini).
-        float dayTint = effectiveDayTint();
+        // Day/night brightness comes exclusively from the MCP-style lightmap. Multiplying
+        // ColorModulator by it again made the scene unnaturally dark and colour-graded.
         if (layer == MODERN_LAYER_TRANSLUCENT) {
-            // Water: base tint 0.247, 0.463, 0.894 mnozony przez dayTint
-            craft3dgl.blaze3d.renderer.RenderSystem.setShaderColor(
-                0.247f * dayTint, 0.463f * dayTint, 0.894f * dayTint, 0.75f);
+            // Plains biome water colour (0x3F76E4); source texture supplies transparency.
+            craft3dgl.blaze3d.renderer.RenderSystem.setShaderColor(0.247f, 0.463f, 0.894f, 1.0f);
         } else {
-            craft3dgl.blaze3d.renderer.RenderSystem.setShaderColor(dayTint, dayTint, dayTint, 1f);
+            craft3dgl.blaze3d.renderer.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         }
         craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogColor(fogC[0], fogC[1], fogC[2], 1f);
-        // Underwater = krotki zasieg widocznosci (5-15 blokow)
         boolean uw = isWaterAt(x, y + eyeHeight(), z);
-        craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogStart(uw ? 2f : 40f);
-        craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogEnd(uw ? 20f : 150f);
+        float fogEnd = range * CHUNK;
+        craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogStart(uw ? 2f : fogEnd * 0.75f);
+        craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogEnd(uw ? 20f : fogEnd);
         craft3dgl.blaze3d.renderer.RenderSystem.setFogEnabled(true);
         craft3dgl.blaze3d.renderer.RenderSystem.applyShader();
 
-        // WIND SWAY: dla CUTOUT layer ustaw GameTime uniform (dla lisci/trawy)
-        if (layer == MODERN_LAYER_CUTOUT) {
-            int locT = org.lwjgl.opengl.GL20.glGetUniformLocation(shader.getId(), "GameTime");
-            if (locT >= 0) {
-                float t = (float)(System.currentTimeMillis() % 100000L) / 1000.0f;
-                org.lwjgl.opengl.GL20.glUniform1f(locT, t);
-            }
-        }
-
-        // KRYTYCZNE: te ustawienia MUSZA byc PO applyShader() bo EffectInstance.apply() nadpisuje!
-        // (domyslnie cull=true w JSON -> enableCull() nadpisuje nasz glDisable)
+        // Apply final layer state after EffectInstance has applied its JSON defaults.
         org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
         org.lwjgl.opengl.GL11.glDepthFunc(org.lwjgl.opengl.GL11.GL_LEQUAL);
         if (layer == MODERN_LAYER_TRANSLUCENT) {
@@ -4414,36 +4600,11 @@ public class MinecraftGL {
             org.lwjgl.opengl.GL11.glDepthMask(true);
             org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_BLEND);
         }
-        // KRYTYCZNE: shader.apply() zawsze wlacza cull (EffectInstance line 225).
-        // My WYLACZAMY PO nim zeby nasze quady (mieszany winding order) byly wszystkie widoczne.
-        org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_CULL_FACE);
+        // Crossed plants are two-sided; opaque blocks and water use corrected CCW faces.
+        if (layer == MODERN_LAYER_CUTOUT) org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_CULL_FACE);
+        else org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_CULL_FACE);
+        // Cutout alpha is discarded directly by rendertype_cutout.fsh.
         org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_ALPHA_TEST);
-
-        // Etap 8: shadow map binding + uniformy (tylko dla SOLID i gdy enabled)
-        boolean shadowsOn = (lightMatrix != null && craft3dgl.blaze3d.renderer.GameRenderer.shadowsEnabled
-            && gameRenderer.getShadowTarget() != null);
-        if (shadowsOn && layer == MODERN_LAYER_SOLID) {
-            // Sampler3 = shadow map depth texture na unit 3
-            gameRenderer.getShadowTarget().bindForReading(org.lwjgl.opengl.GL13.GL_TEXTURE0 + 3);
-            org.lwjgl.opengl.GL20.glUniform1i(
-                org.lwjgl.opengl.GL20.glGetUniformLocation(shader.getId(), "Sampler3"), 3);
-            // LightSpaceMatrix uniform
-            int loc = org.lwjgl.opengl.GL20.glGetUniformLocation(shader.getId(), "LightSpaceMatrix");
-            if (loc >= 0) {
-                java.nio.FloatBuffer fb = org.lwjgl.BufferUtils.createFloatBuffer(16);
-                fb.put(lightMatrix).flip();
-                org.lwjgl.opengl.GL20.glUniformMatrix4fv(loc, false, fb);
-            }
-            // ShadowsEnabled = 1
-            int locOn = org.lwjgl.opengl.GL20.glGetUniformLocation(shader.getId(), "ShadowsEnabled");
-            if (locOn >= 0) org.lwjgl.opengl.GL20.glUniform1i(locOn, 1);
-            // Powrot na unit 0
-            org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
-        } else if (layer == MODERN_LAYER_SOLID) {
-            // ShadowsEnabled = 0
-            int locOn = org.lwjgl.opengl.GL20.glGetUniformLocation(shader.getId(), "ShadowsEnabled");
-            if (locOn >= 0) org.lwjgl.opengl.GL20.glUniform1i(locOn, 0);
-        }
 
         int drawn = 0;
         for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range); cx++) {
@@ -4469,75 +4630,6 @@ public class MinecraftGL {
         org.lwjgl.opengl.GL11.glDepthMask(true);
         org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_BLEND);
         return drawn;
-    }
-
-    /**
-     * Etap 8: Shadow pass - render all SOLID chunks (VBO cached) do shadow map z widoku slonca.
-     * Zwraca LightSpaceMatrix ktora bedzie potem przekazana do rendertype_solid shader.
-     */
-    float[] renderShadowPass() {
-        craft3dgl.blaze3d.shadow.ShadowRenderTarget shadowTarget = gameRenderer.getShadowTarget();
-        craft3dgl.blaze3d.shaders.EffectInstance shadowShader = gameRenderer.shadowDepthShader();
-        if (shadowTarget == null || shadowShader == null) return null;
-
-        float[] lightMatrix = null;
-        try {
-            // Save state
-            org.lwjgl.opengl.GL11.glPushAttrib(org.lwjgl.opengl.GL11.GL_ALL_ATTRIB_BITS);
-            org.lwjgl.opengl.GL11.glPushClientAttrib(org.lwjgl.opengl.GL11.GL_CLIENT_ALL_ATTRIB_BITS);
-
-            // 1. Setup sun view (P + V macierze)
-            craft3dgl.blaze3d.shadow.SunLightMatrix.setupSunView(x, y, z);
-
-            // 2. Zapisz LightSpaceMatrix ZANIM zmienimy matryce
-            lightMatrix = craft3dgl.blaze3d.shadow.SunLightMatrix.getLightSpaceMatrix();
-
-            // 3. Bind shadow FBO
-            shadowTarget.bindForWriting();
-
-            // 4. Setup shader for depth pass
-            craft3dgl.blaze3d.renderer.RenderSystem.setShader(shadowShader);
-            craft3dgl.blaze3d.renderer.RenderSystem.applyShader();
-            org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_CULL_FACE);
-            org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
-            org.lwjgl.opengl.GL11.glDepthMask(true);
-
-            // 5. Draw all cached VBOs (only SOLID layer dla wydajnosci)
-            int pcx = clampInt((int) x / CHUNK, 0, CHUNKS_X - 1);
-            int pcz = clampInt((int) z / CHUNK, 0, CHUNKS_Z - 1);
-            int range = 4;   // mniejszy range dla shadow - dla wydajnosci
-            craft3dgl.blaze3d.vertex.VertexFormat fmt = craft3dgl.blaze3d.vertex.DefaultVertexFormat.BLOCK;
-            for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range); cx++) {
-                for (int cy = 0; cy < CHUNKS_Y; cy++) {
-                    for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range); cz++) {
-                        Chunk ch = chunks[cx][cy][cz];
-                        if (ch.modernVboSolid == null || ch.modernVertexCountSolid == 0) continue;
-                        ch.modernVboSolid.bind();
-                        fmt.setupBufferState(0L);
-                        ch.modernVboSolid.draw(org.lwjgl.opengl.GL11.GL_QUADS);
-                        fmt.clearBufferState();
-                    }
-                }
-            }
-            craft3dgl.blaze3d.vertex.VertexBuffer.unbind();
-
-            // 6. Cleanup
-            org.lwjgl.opengl.GL20.glUseProgram(0);
-            craft3dgl.blaze3d.renderer.RenderSystem.setShader(null);
-            shadowTarget.unbindWriting();
-            craft3dgl.blaze3d.shadow.SunLightMatrix.restoreView();
-
-            org.lwjgl.opengl.GL11.glPopClientAttrib();
-            org.lwjgl.opengl.GL11.glPopAttrib();
-        } catch (Throwable t) {
-            try { org.lwjgl.opengl.GL20.glUseProgram(0); } catch (Throwable ignored) {}
-            try { org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0); } catch (Throwable ignored) {}
-            try { org.lwjgl.opengl.GL11.glPopClientAttrib(); } catch (Throwable ignored) {}
-            try { org.lwjgl.opengl.GL11.glPopAttrib(); } catch (Throwable ignored) {}
-            System.err.println("[ShadowPass] error: " + t);
-            t.printStackTrace();
-        }
-        return lightMatrix;
     }
 
     /**
@@ -4678,9 +4770,9 @@ public class MinecraftGL {
         // Top (jesli nie ma wody nad)
         if (!isWater(x, y + 1, z)) {
             vtxModern(bb, u0,v0, x,   top, z,   0.95f, lu, lv);
-            vtxModern(bb, u1,v0, x+1, top, z,   0.95f, lu, lv);
-            vtxModern(bb, u1,v1, x+1, top, z+1, 0.95f, lu, lv);
             vtxModern(bb, u0,v1, x,   top, z+1, 0.95f, lu, lv);
+            vtxModern(bb, u1,v1, x+1, top, z+1, 0.95f, lu, lv);
+            vtxModern(bb, u1,v0, x+1, top, z,   0.95f, lu, lv);
             quads++;
         }
         // +X
@@ -4725,9 +4817,8 @@ public class MinecraftGL {
         float u1 = (float) atlasU1(tile);
         float v0 = (float) atlasV0();
         float v1 = (float) atlasV1();
-        // Direction shading MC-style: top=1.0, side=0.8, back=0.8, bottom=0.5
-        // (podniesione minimum zeby ciemne strony nie byly totalnie czarne)
-        float dirShade = dir == 2 ? 1.0f : dir == 3 ? 0.55f : dir < 2 ? 0.85f : 0.80f;
+        // BlockModelRenderer's vanilla face brightness: down=.5, up=1, Z=.8, X=.6.
+        float dirShade = dir == 2 ? 1.0f : dir == 3 ? 0.5f : dir < 2 ? 0.6f : 0.8f;
         int nx = x, ny = y, nz = z;
         switch (dir) {
             case 0: nx = x + 1; break;
@@ -4737,10 +4828,10 @@ public class MinecraftGL {
             case 4: nz = z + 1; break;
             case 5: nz = z - 1; break;
         }
-        // Vertex color = TYLKO direction shade + AO (bez dayMult! - to jest w lightmap)
+        // No decorative per-corner gradient: vanilla smooth lighting derives AO from
+        // neighbouring opaque blocks, never from a fixed pattern on every face.
         float light = dirShade;
-        // AO na krawedziach
-        float a = 1.00f, b = 0.82f, c = 0.62f, d = 0.75f;
+        float a = 1.0f, b = 1.0f, c = 1.0f, d = 1.0f;
         // MC-style lightmap UV: X = block light (torch), Y = sky light
         // Poziomy 0..15 - shader podzieli przez 16
         int skyLv = 15, blLv = 0;
@@ -4770,15 +4861,15 @@ public class MinecraftGL {
                 break;
             case 2:
                 vtxModern(bb, u0,v0, x,y+1,z,     light*b, lu, lv);
-                vtxModern(bb, u1,v0, x+1,y+1,z,   light*a, lu, lv);
-                vtxModern(bb, u1,v1, x+1,y+1,z+1, light*b, lu, lv);
                 vtxModern(bb, u0,v1, x,y+1,z+1,   light*a, lu, lv);
+                vtxModern(bb, u1,v1, x+1,y+1,z+1, light*b, lu, lv);
+                vtxModern(bb, u1,v0, x+1,y+1,z,   light*a, lu, lv);
                 break;
             case 3:
                 vtxModern(bb, u0,v1, x,y,z+1,     light*c, lu, lv);
-                vtxModern(bb, u1,v1, x+1,y,z+1,   light*c, lu, lv);
-                vtxModern(bb, u1,v0, x+1,y,z,     light*d, lu, lv);
                 vtxModern(bb, u0,v0, x,y,z,       light*d, lu, lv);
+                vtxModern(bb, u1,v0, x+1,y,z,     light*d, lu, lv);
+                vtxModern(bb, u1,v1, x+1,y,z+1,   light*c, lu, lv);
                 break;
             case 4:
                 vtxModern(bb, u0,v1, x,y,z+1,     light*c, lu, lv);
@@ -4873,7 +4964,10 @@ public class MinecraftGL {
 
     void drawCrosshair() {
         double mp = (miningHit != null) ? Math.min(1.0, miningProgress) : 0.0;
-        craft3dgl.ui.Crosshair.draw(width, height, mp, org.lwjgl.glfw.GLFW.glfwGetTime());
+        float attackStrength = craft3dgl.combat.DamageSystem.cooledAttackStrength(
+                ticksSinceLastSwing, selectedItemId(), 0.0f);
+        craft3dgl.ui.Crosshair.draw(width, height, mp,
+                org.lwjgl.glfw.GLFW.glfwGetTime(), attackStrength);
     }
 
     void drawDeathScreen() {
@@ -6846,7 +6940,6 @@ public class MinecraftGL {
             }
         }
         glfwDestroyWindow(window);
-        postProcess.cleanup();
         gameRenderer.cleanup();
         glfwTerminate();
     }

@@ -3,43 +3,29 @@ package craft3dgl.world;
 import static org.lwjgl.opengl.GL11.*;
 
 /**
- * Gradientowe niebo z day/night cycle. Rysowane jako 2D quad w tle PRZED chunkami.
+ * Minecraft 1.12-style overworld sky/fog colours drawn behind the chunk passes.
  * dayFraction: 0..1 (0=polnoc, 0.25=wschod, 0.5=poludnie, 0.75=zachod).
  */
 public final class SkyRenderer {
     private SkyRenderer() {}
 
-    /** Zwraca kolor top/bottom nieba dla dayFraction. */
+    /** Vanilla-overworld sky and fog colours, without a full-screen cinematic sunset tint. */
     public static float[] getSkyColors(double dayFraction) {
-        // Kilka keyframes:
-        // 0.0 (noc)    top: 0.03,0.05,0.13   horizon: 0.10,0.13,0.25
-        // 0.20 (przed wschodem) top: 0.20,0.20,0.42 horiz: 0.85,0.55,0.45
-        // 0.30 (dzien) top: 0.28,0.55,0.88 horiz: 0.70,0.85,0.98
-        // 0.7  (dzien) top: 0.28,0.55,0.88 horiz: 0.70,0.85,0.98
-        // 0.80 (zachod) top: 0.30,0.20,0.45 horiz: 1.00,0.55,0.35
-        // 0.9 (noc)  ...
-        float[][] keys = {
-            {0.00f,  0.03f, 0.05f, 0.13f,   0.10f, 0.13f, 0.25f}, // noc
-            {0.20f,  0.20f, 0.20f, 0.42f,   0.85f, 0.55f, 0.45f}, // wschod
-            {0.30f,  0.28f, 0.55f, 0.88f,   0.70f, 0.85f, 0.98f}, // dzien
-            {0.70f,  0.28f, 0.55f, 0.88f,   0.70f, 0.85f, 0.98f}, // dzien
-            {0.80f,  0.30f, 0.20f, 0.45f,   1.00f, 0.55f, 0.35f}, // zachod
-            {0.95f,  0.05f, 0.06f, 0.16f,   0.15f, 0.15f, 0.30f}, // noc
-            {1.00f,  0.03f, 0.05f, 0.13f,   0.10f, 0.13f, 0.25f}, // noc (loop)
-        };
-        double t = dayFraction % 1.0;
-        for (int i = 0; i < keys.length - 1; i++) {
-            if (t >= keys[i][0] && t <= keys[i+1][0]) {
-                double range = keys[i+1][0] - keys[i][0];
-                double f = range > 0 ? (t - keys[i][0]) / range : 0;
-                float[] out = new float[6];
-                for (int j = 0; j < 6; j++) {
-                    out[j] = (float)(keys[i][1+j] * (1-f) + keys[i+1][1+j] * f);
-                }
-                return out;
-            }
-        }
-        return new float[]{0.28f, 0.55f, 0.88f, 0.70f, 0.85f, 0.98f};
+        float raw = LightEngine.skyDayMultiplier(dayFraction);
+        float daylight = clamp((raw - 0.15f) / 0.85f);
+        // World.getSkyColor and WorldProvider.getFogColor constants from MCP 9.40.
+        float skyFactor = daylight;
+        float topR = 0.50f * skyFactor;
+        float topG = 0.66275f * skyFactor;
+        float topB = 1.00f * skyFactor;
+        float horizonR = 0.7529412f * (daylight * 0.94f + 0.06f);
+        float horizonG = 0.84705883f * (daylight * 0.94f + 0.06f);
+        float horizonB = 1.0f * (daylight * 0.91f + 0.09f);
+        return new float[]{topR, topG, topB, horizonR, horizonG, horizonB};
+    }
+
+    private static float clamp(float value) {
+        return Math.max(0.0f, Math.min(1.0f, value));
     }
 
     /** Rysuje gradientowe niebo. Wywolywac PRZED setupCamera(). */

@@ -21,7 +21,7 @@ public class WaterTexture {
     private ByteBuffer[] frames;
     private long lastFrameTime = 0;
     private int currentFrame = 0;
-    private static final int FRAME_DURATION_MS = 120;
+    private static final int FRAME_DURATION_MS = 100; // water_still.mcmeta: frametime 2 ticks
 
     public WaterTexture() {
         loadFrames();

@@ -12,7 +12,8 @@ public final class Particle {
         BLOCK_DUST,
         WATER_BUBBLE,
         WATER_SPLASH,
-        HEART
+        HEART,
+        CRIT
     }
 
     public final Type type;
@@ -131,6 +132,23 @@ public final class Particle {
         return particle;
     }
 
+    /** MCP ParticleCrit, emitted by EntityPlayer's critical-hit animation. */
+    public static Particle crit(Random random, double x, double y, double z,
+                                double xSpeed, double ySpeed, double zSpeed) {
+        Particle particle = base(random, Type.CRIT, x, y, z, 0.0, 0.0, 0.0);
+        particle.motionX = particle.motionX * 0.1 + xSpeed * 0.4;
+        particle.motionY = particle.motionY * 0.1 + ySpeed * 0.4;
+        particle.motionZ = particle.motionZ * 0.1 + zSpeed * 0.4;
+        float shade = random.nextFloat() * 0.3f + 0.6f;
+        particle.red = particle.green = particle.blue = shade;
+        particle.scale *= 0.75f;
+        particle.maxAge = Math.max(1, (int)(6.0 / (random.nextDouble() * 0.8 + 0.6)));
+        particle.textureIndex = 65;
+        // ParticleCrit's constructor performs one initial update.
+        particle.tick(null);
+        return particle;
+    }
+
     private Particle copyAs(Type newType) {
         Particle copy = new Particle(newType, x, y, z);
         copy.prevX = prevX;
@@ -178,7 +196,7 @@ public final class Particle {
     }
 
     public float renderScale(float partialTicks) {
-        if (type == Type.HEART) {
+        if (type == Type.HEART || type == Type.CRIT) {
             float growth = ((float)age + partialTicks) / (float)Math.max(1, maxAge) * 32.0f;
             return scale * Math.min(growth, 1.0f);
         }
@@ -229,6 +247,21 @@ public final class Particle {
                 if (onGround) {
                     motionX *= 0.7;
                     motionZ *= 0.7;
+                }
+                break;
+
+            case CRIT:
+                if (age++ >= maxAge) expired = true;
+                move(world, motionX, motionY, motionZ);
+                green *= 0.96f;
+                blue *= 0.90f;
+                motionX *= 0.70;
+                motionY *= 0.70;
+                motionZ *= 0.70;
+                motionY -= 0.02;
+                if (onGround) {
+                    motionX *= 0.70;
+                    motionZ *= 0.70;
                 }
                 break;
 

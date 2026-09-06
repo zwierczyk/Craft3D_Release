@@ -10,6 +10,7 @@ import java.util.List;
 import javax.imageio.ImageIO;
 import org.lwjgl.BufferUtils;
 
+import static craft3dgl.ui.CuboidHelper.color;
 import static org.lwjgl.opengl.GL11.*;
 
 /**
@@ -74,9 +75,9 @@ public final class VillagerRenderer {
         glEnable(GL_TEXTURE_2D);
         glEnable(GL_ALPHA_TEST);
         glAlphaFunc(GL_GREATER, 0.1f);
-        glColor4f(1f, 1f, 1f, 1f);
 
         for (VillagerGL v : villagers) {
+            color(1f, 1f, 1f);
             glPushMatrix();
             double gy = v.displayInit ? v.displayY : v.y;
             glTranslated(v.x, gy, v.z);

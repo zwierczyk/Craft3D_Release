@@ -2,100 +2,66 @@ package craft3dgl.ui;
 
 import static org.lwjgl.opengl.GL11.*;
 
-/**
- * Crosshair MC-style. Z pulsujacym "hitmark" gdy trafisz oraz rozszerzeniem podczas kopania.
- */
+/** Minecraft 1.12-style crosshair with the crosshair attack-strength indicator. */
 public final class Crosshair {
     private Crosshair() {}
 
-    private static double hitFlashTime = 0.0;   // 0..0.3 - anim po hicie
-    private static double lastTime = -1;
+    /** Kept for old call sites; vanilla 1.12 does not draw a custom hit ring. */
+    public static void triggerHit() {}
 
-    /** Wywolaj kiedy trafiles blok/entity - crosshair blyknie. */
-    public static void triggerHit() { hitFlashTime = 0.35; }
-
-    /**
-     * Draw crosshair.
-     * miningProgress 0..1 (0 = nie kopie, 1 = prawie skoncze) - rozszerza crosshair
-     * currentTime - do animacji (glfwGetTime)
-     */
-    public static void draw(int width, int height, double miningProgress, double currentTime) {
-        if (lastTime < 0) lastTime = currentTime;
-        double dt = currentTime - lastTime;
-        lastTime = currentTime;
-        if (hitFlashTime > 0) hitFlashTime = Math.max(0, hitFlashTime - dt);
-
+    public static void draw(int width, int height, double miningProgress,
+                            double currentTime, float attackStrength) {
         int cx = width / 2;
         int cy = height / 2;
-        // Rozszerzenie podczas kopania
-        int expand = (int) (miningProgress * 6);
-        int len = 10;
-        int gap = 4 + expand;
+        int arm = 8;
+        int gap = 3;
+        int thickness = 2;
 
         glDisable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-        // 1. Dark outline
+        // Black one-pixel outline around the vanilla white cross.
         glColor4f(0f, 0f, 0f, 0.85f);
-        UIStyle.quad(cx - gap - len - 1, cy - 2, len + 2, 4);
-        UIStyle.quad(cx + gap - 1, cy - 2, len + 2, 4);
-        UIStyle.quad(cx - 2, cy - gap - len - 1, 4, len + 2);
-        UIStyle.quad(cx - 2, cy + gap - 1, 4, len + 2);
+        UIStyle.quad(cx - 1, cy - gap - arm - 1, thickness + 2, arm + 2);
+        UIStyle.quad(cx - 1, cy + gap - 1, thickness + 2, arm + 2);
+        UIStyle.quad(cx - gap - arm - 1, cy - 1, arm + 2, thickness + 2);
+        UIStyle.quad(cx + gap - 1, cy - 1, arm + 2, thickness + 2);
         UIStyle.quad(cx - 2, cy - 2, 4, 4);
 
-        // 2. White inner
         glColor4f(1f, 1f, 1f, 1f);
-        UIStyle.quad(cx - gap - len, cy - 1, len, 2);
-        UIStyle.quad(cx + gap, cy - 1, len, 2);
-        UIStyle.quad(cx - 1, cy - gap - len, 2, len);
-        UIStyle.quad(cx - 1, cy + gap, 2, len);
-        UIStyle.quad(cx - 1, cy - 1, 2, 2);
+        UIStyle.quad(cx - 1, cy - gap - arm, thickness, arm);
+        UIStyle.quad(cx - 1, cy + gap, thickness, arm);
+        UIStyle.quad(cx - gap - arm, cy - 1, arm, thickness);
+        UIStyle.quad(cx + gap, cy - 1, arm, thickness);
+        UIStyle.quad(cx - 1, cy - 1, thickness, thickness);
 
-        // 3. Hit flash - jasny cyjan pierscien
-        if (hitFlashTime > 0) {
-            float a = (float) (hitFlashTime / 0.35);
-            int r = (int) (12 + (1 - a) * 10);
-            glColor4f(0.10f, 0.85f, 1.00f, a * 0.85f);
-            glBegin(GL_LINE_LOOP);
-            int segs = 24;
-            for (int i = 0; i < segs; i++) {
-                double ang = i * Math.PI * 2 / segs;
-                glVertex2d(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+        // GuiIngame's 17-pixel attack indicator, shown while the weapon recharges.
+        float strength = Math.max(0.0f, Math.min(1.0f, attackStrength));
+        if (strength < 1.0f) {
+            int barX = cx - 9;
+            int barY = cy + 17;
+            int fill = Math.round(17.0f * strength);
+            glColor4f(0f, 0f, 0f, 0.8f);
+            UIStyle.quad(barX, barY, 19, 5);
+            glColor4f(0.30f, 0.30f, 0.30f, 1f);
+            UIStyle.quad(barX + 1, barY + 1, 17, 3);
+            if (fill > 0) {
+                glColor4f(1f, 1f, 1f, 1f);
+                UIStyle.quad(barX + 1, barY + 1, fill, 3);
             }
-            glEnd();
-            // Drugi pierscien w srodku
-            glColor4f(1f, 1f, 1f, a * 0.5f);
-            glBegin(GL_LINE_LOOP);
-            int r2 = r - 3;
-            for (int i = 0; i < segs; i++) {
-                double ang = i * Math.PI * 2 / segs;
-                glVertex2d(cx + Math.cos(ang) * r2, cy + Math.sin(ang) * r2);
-            }
-            glEnd();
-        }
-
-        // 4. Mining progress circle
-        if (miningProgress > 0.02) {
-            glColor4f(1.0f, 0.5f, 0.1f, 0.9f);
-            int r = 18;
-            int segs = 32;
-            int upTo = (int) (miningProgress * segs);
-            glBegin(GL_LINE_STRIP);
-            for (int i = 0; i <= upTo; i++) {
-                double ang = -Math.PI * 0.5 + i * Math.PI * 2 / segs;
-                glVertex2d(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
-            }
-            glEnd();
         }
 
         glDisable(GL_BLEND);
         glEnable(GL_TEXTURE_2D);
-        glColor4f(1, 1, 1, 1);
+        glColor4f(1f, 1f, 1f, 1f);
     }
 
-    // Backward compat
+    public static void draw(int width, int height, double miningProgress, double currentTime) {
+        draw(width, height, miningProgress, currentTime, 1.0f);
+    }
+
     public static void draw(int width, int height) {
-        draw(width, height, 0.0, System.nanoTime() * 1e-9);
+        draw(width, height, 0.0, System.nanoTime() * 1e-9, 1.0f);
     }
 }

@@ -9,7 +9,7 @@ varying vec2 texCoord0;
 varying vec2 lightCoord;
 void main() {
     vec4 tex = texture2D(Sampler0, texCoord0);
-    if (tex.a < 0.5) discard;                     // alpha cutout
+    if (tex.a < 0.1) discard;                     // Minecraft 1.12 alpha threshold
     vec4 light = texture2D(Sampler1, lightCoord);
     vec4 base = tex * gl_Color * light * ColorModulator;
     float fogFactor = clamp((gl_FragCoord.z / gl_FragCoord.w - FogStart) / (FogEnd - FogStart), 0.0, 1.0);

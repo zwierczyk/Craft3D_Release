@@ -6,94 +6,92 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
 
 /**
- * MC-style 16x16 lightmap texture.
- *   U axis = block light (torch, glowstone) 0..15
- *   V axis = sky light 0..15
- *   Kolor pixela = jak jasno rysowac blok o tym poziomie oswietlenia.
- *
- * W dzien: prawy gorny pixel (bl=15, sky=15) = jasny bialy
- * W nocy: sky-light effective = sky*0.15, wiec cala prawa kolumna sciemnia sie
- * Torches (bl=15) - zawsze jasne, ciepla barwa
- *
- * Update per frame - reaguje na czas dnia.
+ * 16x16 combined sky/block-light texture using Minecraft 1.12's
+ * EntityRenderer.updateLightmap colour equations.
  */
 public class LightmapTexture {
-    private final int textureId;
     private static final int SIZE = 16;
+    private final int textureId;
     private final ByteBuffer buffer;
-    private int debugFrameCnt = 0;
+    private final float[] brightness = new float[16];
 
     public LightmapTexture() {
         textureId = GL11.glGenTextures();
         buffer = BufferUtils.createByteBuffer(SIZE * SIZE * 4);
-        // Init - white
-        for (int i = 0; i < SIZE * SIZE * 4; i++) buffer.put((byte)255);
+        for (int level = 0; level < 16; level++) {
+            float darkness = 1.0f - level / 15.0f;
+            brightness[level] = (1.0f - darkness) / (darkness * 3.0f + 1.0f);
+        }
+        for (int i = 0; i < SIZE * SIZE * 4; i++) buffer.put((byte) 255);
         buffer.flip();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA,
-            SIZE, SIZE, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buffer);
+                SIZE, SIZE, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buffer);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL14.GL_CLAMP_TO_EDGE);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL14.GL_CLAMP_TO_EDGE);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-        System.out.println("[LightmapTexture] Created 16x16 texId=" + textureId);
     }
 
-    /** Backward compat overload. */
     public void update(float dayMult) {
         update(dayMult, 0f);
     }
 
-    /**
-     * Update lightmap texture based on time of day + night vision boost.
-     * dayMult: 0.15 = noc, 1.0 = dzien
-     * nightVisionBoost: 0.0 = brak, 0.85 = widoczne w calkowitej ciemnosci
-     */
     public void update(float dayMult, float nightVisionBoost) {
         buffer.clear();
-        // MC 1.14-style: minShade w nocy 0.05, w dzien 0.20 (widoczne ciemne strony bloków)
-        // Noc jest naprawde ciemna - trzeba pochodni.
-        // Night vision = wymusza minimum shade np. 0.85
-        float minShade = 0.05f + dayMult * 0.15f;
-        if (nightVisionBoost > minShade) minShade = nightVisionBoost;
+        // LightEngine uses 0.15 at night; vanilla World.getSunBrightness uses 0.20.
+        float daylight = clamp((dayMult - 0.15f) / 0.85f);
+        float sunBrightness = 0.20f + daylight * 0.80f;
+        float skyMultiplier = sunBrightness * 0.95f + 0.05f;
+        float nightVision = clamp(nightVisionBoost / 0.85f);
+
         for (int sky = 0; sky < SIZE; sky++) {
-            float skyEff = sky * dayMult / 15f;
-            for (int bl = 0; bl < SIZE; bl++) {
-                float blLev = bl / 15f;
-                float lv = Math.max(skyEff, blLev);
-                // Krzywa gamma jak MC: pow(lv, 1.4) - ostrzejsza gamma, ciemniejsze ciemne
-                float shade = Math.max(minShade, (float)Math.pow(lv, 1.4) * 0.90f + minShade * 0.5f);
-                // Torch/block light = cieply kolor (ciepla poziomka), sky = neutralny
-                // Mieszamy proporcjonalnie
-                float torchWeight = (blLev > skyEff) ? 1.0f : blLev / Math.max(0.01f, lv);
-                float skyWeight = 1f - torchWeight;
-                float r = shade * (skyWeight * 1.00f + torchWeight * 1.00f);
-                float g = shade * (skyWeight * 1.00f + torchWeight * 0.80f);
-                float b = shade * (skyWeight * 1.00f + torchWeight * 0.55f);
-                buffer.put((byte)(Math.min(255, r * 255)));
-                buffer.put((byte)(Math.min(255, g * 255)));
-                buffer.put((byte)(Math.min(255, b * 255)));
-                buffer.put((byte)255);
+            float skyLight = brightness[sky] * skyMultiplier;
+            for (int block = 0; block < SIZE; block++) {
+                // torchFlickerX is omitted, but vanilla's +1.5 base multiplier is retained.
+                float blockLight = brightness[block] * 1.5f;
+                float skyColour = skyLight * (sunBrightness * 0.65f + 0.35f);
+                float blockGreen = blockLight * ((blockLight * 0.6f + 0.4f) * 0.6f + 0.4f);
+                float blockBlue = blockLight * (blockLight * blockLight * 0.6f + 0.4f);
+
+                float red = (skyColour + blockLight) * 0.96f + 0.03f;
+                float green = (skyColour + blockGreen) * 0.96f + 0.03f;
+                float blue = (skyLight + blockBlue) * 0.96f + 0.03f;
+
+                if (nightVision > 0.0f) {
+                    float maxComponent = Math.max(red, Math.max(green, blue));
+                    if (maxComponent > 0.0f) {
+                        float normalize = 1.0f / maxComponent;
+                        red = red * (1.0f - nightVision) + red * normalize * nightVision;
+                        green = green * (1.0f - nightVision) + green * normalize * nightVision;
+                        blue = blue * (1.0f - nightVision) + blue * normalize * nightVision;
+                    }
+                }
+
+                // Vanilla performs this final 0.96 + 0.03 pass after gamma correction.
+                red = clamp(red) * 0.96f + 0.03f;
+                green = clamp(green) * 0.96f + 0.03f;
+                blue = clamp(blue) * 0.96f + 0.03f;
+                buffer.put((byte) Math.round(clamp(red) * 255.0f));
+                buffer.put((byte) Math.round(clamp(green) * 255.0f));
+                buffer.put((byte) Math.round(clamp(blue) * 255.0f));
+                buffer.put((byte) 255);
             }
         }
         buffer.flip();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
         GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, SIZE, SIZE,
-            GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buffer);
-        // DEBUG: co ~120 klatek wypisz kluczowe pixele lightmapy
-        debugFrameCnt++;
-        if (debugFrameCnt % 120 == 0) {
-            int centerPixel = (15 * SIZE + 15) * 4;  // sky=15, bl=15 -> pixel [15,15]
-            int r15 = buffer.get(centerPixel) & 0xFF;
-            int r0sky15 = buffer.get((15 * SIZE + 0) * 4) & 0xFF; // sky=15, bl=0
-            int r0sky0 = buffer.get(0) & 0xFF; // sky=0, bl=0
-            System.out.println("[LightmapDBG] dayMult=" + String.format("%.3f", dayMult)
-                + " sky15bl15=" + r15 + " sky15bl0=" + r0sky15 + " sky0bl0=" + r0sky0);
-        }
+                GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buffer);
     }
 
-    public int getTextureId() { return textureId; }
+    private static float clamp(float value) {
+        return Math.max(0.0f, Math.min(1.0f, value));
+    }
+
+    public int getTextureId() {
+        return textureId;
+    }
 
     public void cleanup() {
         GL11.glDeleteTextures(textureId);

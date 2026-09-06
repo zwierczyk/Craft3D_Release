@@ -19,8 +19,14 @@ public final class AnimalGL {
     /** Head angles relative to body, in radians. */
     public double headYaw;
     public double headPitch;
-    public int health;
+    public float health;
     public double age;
+    /** EntityLivingBase combat state (MCP 9.40). */
+    public double hurtResistantTime;
+    public double hurtTime;
+    public float lastDamage;
+    public double knockbackX;
+    public double knockbackZ;
     public double displayY;
     public boolean displayInit;
 

@@ -51,6 +51,12 @@ final class SoundEngine {
     void playStep(int block)   { if (playFile("step.wav")) return; if (block == 0) block = 3; double vol = block == 5 ? 0.08 : 0.13; noiseThump(block == 6 ? 180 : 130, 0.055, vol * mix("players")); }
     void playEat()             { if (playFile("eat.wav")) return; noiseThump(260, 0.12, 0.18 * mix("players")); tone(520, 0.04, 0.08 * mix("players"), 0); }
     void playHurt()            { if (playFile("hurt.wav")) return; sweep(320, 120, 0.16, 0.22 * mix("players")); }
+    void playAttackWeak()      { if (playFile("attack_weak.wav")) return; noiseThump(105, 0.055, 0.09 * mix("players")); }
+    void playAttackStrong()    { if (playFile("attack_strong.wav")) return; noiseCrack(0.075, 0.17 * mix("players")); }
+    void playAttackKnockback() { if (playFile("attack_knockback.wav")) return; sweep(180, 95, 0.10, 0.17 * mix("players")); }
+    void playAttackCritical()  { if (playFile("attack_crit.wav")) return; sweep(520, 210, 0.09, 0.18 * mix("players")); }
+    void playAttackSweep()     { if (playFile("attack_sweep.wav")) return; sweep(150, 420, 0.12, 0.14 * mix("players")); }
+    void playAttackNoDamage()  { if (playFile("attack_nodamage.wav")) return; noiseThump(80, 0.045, 0.07 * mix("players")); }
     void playAnimal()          { if (playFile("animal.wav")) return; sweep(180 + rnd.nextInt(80), 130 + rnd.nextInt(80), 0.11, 0.12 * mix("animals")); }
     void playCow()             { if (playFile("cow.wav")) return; playAnimal(); }
     void playPig()             { if (playFile("pig.wav")) return; playAnimal(); }

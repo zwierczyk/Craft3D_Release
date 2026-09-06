@@ -10,7 +10,13 @@ public final class VillagerGL {
     public double displayY;
     public boolean displayInit;
     public int profession; // 0 farmer, 1 librarian, 2 toolsmith
-    public int health = 20;
+    public float health = 20;
+    /** EntityLivingBase combat state (MCP 9.40). */
+    public double hurtResistantTime;
+    public double hurtTime;
+    public float lastDamage;
+    public double knockbackX;
+    public double knockbackZ;
 
     // Pole spawnu - wioska do ktorej villager nalezy. Uzywamy do trzymania ich blisko.
     public double homeX, homeZ;
