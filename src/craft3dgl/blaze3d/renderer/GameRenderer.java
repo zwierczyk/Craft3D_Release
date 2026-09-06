@@ -103,6 +103,12 @@ public class GameRenderer {
             try { s.close(); } catch (Exception ignored) {}
         }
         shaders.clear();
+        if (lightmapTexture != null) lightmapTexture.cleanup();
+        if (waterTexture != null) waterTexture.cleanup();
+        if (whiteLightmapTexId > 0) org.lwjgl.opengl.GL11.glDeleteTextures(whiteLightmapTexId);
+        lightmapTexture = null;
+        waterTexture = null;
+        whiteLightmapTexId = 0;
         initialized = false;
     }
 }

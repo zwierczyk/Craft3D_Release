@@ -158,6 +158,7 @@ public class MinecraftGL {
     boolean loadingScreenActive = false;
     int loadingTerrainDone = 0;
     int loadingTerrainTarget = 1;
+    boolean terrainVboLogged = false;
     long worldSeed = 0;
 
     // Komorki gdzie juz raz wygenerowano wioske - zapobiega ponownemu spawnowi villagerow.
@@ -551,6 +552,13 @@ public class MinecraftGL {
 
     void initGL() {
         GL.createCapabilities();
+        // Select core/ARB VBO entry points for this exact driver before any
+        // terrain buffer is created.
+        craft3dgl.blaze3d.platform.GLX.init();
+        System.out.println("[OpenGL] vendor=" + glGetString(GL_VENDOR)
+                + " renderer=" + glGetString(GL_RENDERER)
+                + " version=" + glGetString(GL_VERSION)
+                + " textureUnits=" + glGetInteger(org.lwjgl.opengl.GL13.GL_MAX_TEXTURE_UNITS));
         glViewport(0, 0, width, height);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
@@ -1442,7 +1450,7 @@ public class MinecraftGL {
             generateWorld(System.currentTimeMillis());
             worldLoaded = true;
             renderLoadingScreen(0.64, "Budowanie terenu...");
-            rebuildInitialChunksForLoading(5, 0.64, 0.91);
+            rebuildInitialChunksForLoading(3, 0.64, 0.91);
             renderLoadingScreen(0.93, "Zapisywanie swiata...");
             saveWorld(name);
             renderLoadingScreen(1.0, "Dolaczanie do swiata...");
@@ -1708,7 +1716,7 @@ public class MinecraftGL {
             renderLoadingScreen(0.59, "Przygotowywanie blokow...");
             registerMissingChestTileEntities();
             markAllChunksDirty();
-            rebuildInitialChunksForLoading(5, 0.61, 0.91);
+            rebuildInitialChunksForLoading(3, 0.61, 0.91);
             renderLoadingScreen(0.93, "Przygotowywanie wody...");
             seedWaterQueue();
             worldLoaded = true;
@@ -4349,26 +4357,39 @@ public class MinecraftGL {
                 for (int cy = 0; cy < CHUNKS_Y; cy++) {
                     for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range); cz++) {
                         if (generatedColumns[cx][cz] && litColumns[cx][cz]
-                                && chunks[cx][cy][cz].leavesList != 0) order.add(new int[]{cx, cy, cz});
+                                && chunks[cx][cy][cz].modernVboTranslucent != null) order.add(new int[]{cx, cy, cz});
                     }
                 }
             }
             order.sort((a, b) -> Double.compare(chunkDistanceSq(b), chunkDistanceSq(a)));
-            for (int[] pos : order) glCallList(chunks[pos[0]][pos[1]][pos[2]].leavesList);
+            for (int[] pos : order) {
+                drawFixedChunkVbo(chunks[pos[0]][pos[1]][pos[2]].modernVboTranslucent);
+            }
         } else {
             for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range); cx++) {
                 for (int cy = 0; cy < CHUNKS_Y; cy++) {
                     for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range); cz++) {
                         if (!generatedColumns[cx][cz] || !litColumns[cx][cz]) continue;
-                        int list = chunks[cx][cy][cz].terrainList;
-                        if (list != 0) glCallList(list);
+                        Chunk ch = chunks[cx][cy][cz];
+                        drawFixedChunkVbo(ch.modernVboSolid);
+                        drawFixedChunkVbo(ch.modernVboCutout);
                     }
                 }
             }
         }
+        craft3dgl.blaze3d.vertex.VertexBuffer.unbind();
         glShadeModel(GL_FLAT);
         if (leaves) { glDepthMask(true); glDisable(GL_BLEND); }
         disableFixedFunctionLightmap();
+    }
+
+    void drawFixedChunkVbo(craft3dgl.blaze3d.vertex.VertexBuffer vbo) {
+        if (vbo == null || vbo.getVertexCount() <= 0) return;
+        craft3dgl.blaze3d.vertex.VertexFormat fmt = craft3dgl.blaze3d.vertex.DefaultVertexFormat.BLOCK;
+        vbo.bind();
+        fmt.setupBufferState(0L);
+        vbo.draw(GL_QUADS);
+        fmt.clearBufferState();
     }
 
     double chunkDistanceSq(int[] pos) {
@@ -5147,42 +5168,42 @@ public class MinecraftGL {
         int quads = 0;
         // Top (jesli nie ma wody nad)
         if (!isWater(x, y + 1, z)) {
-            vtxModern(bb, u0,v0, x,   top, z,   0.95f, lu, lv);
-            vtxModern(bb, u0,v1, x,   top, z+1, 0.95f, lu, lv);
-            vtxModern(bb, u1,v1, x+1, top, z+1, 0.95f, lu, lv);
-            vtxModern(bb, u1,v0, x+1, top, z,   0.95f, lu, lv);
+            vtxWater(bb, u0,v0, x,   top, z,   0.95f, lu, lv);
+            vtxWater(bb, u0,v1, x,   top, z+1, 0.95f, lu, lv);
+            vtxWater(bb, u1,v1, x+1, top, z+1, 0.95f, lu, lv);
+            vtxWater(bb, u1,v0, x+1, top, z,   0.95f, lu, lv);
             quads++;
         }
         // +X
         if (isAirForWaterSide(x + 1, y, z)) {
-            vtxModern(bb, u0,v1, x+1, y,   z+1, 0.68f, lu, lv);
-            vtxModern(bb, u1,v1, x+1, y,   z,   0.68f, lu, lv);
-            vtxModern(bb, u1,v0, x+1, top, z,   0.68f, lu, lv);
-            vtxModern(bb, u0,v0, x+1, top, z+1, 0.68f, lu, lv);
+            vtxWater(bb, u0,v1, x+1, y,   z+1, 0.68f, lu, lv);
+            vtxWater(bb, u1,v1, x+1, y,   z,   0.68f, lu, lv);
+            vtxWater(bb, u1,v0, x+1, top, z,   0.68f, lu, lv);
+            vtxWater(bb, u0,v0, x+1, top, z+1, 0.68f, lu, lv);
             quads++;
         }
         // -X
         if (isAirForWaterSide(x - 1, y, z)) {
-            vtxModern(bb, u0,v1, x, y,   z,   0.68f, lu, lv);
-            vtxModern(bb, u1,v1, x, y,   z+1, 0.68f, lu, lv);
-            vtxModern(bb, u1,v0, x, top, z+1, 0.68f, lu, lv);
-            vtxModern(bb, u0,v0, x, top, z,   0.68f, lu, lv);
+            vtxWater(bb, u0,v1, x, y,   z,   0.68f, lu, lv);
+            vtxWater(bb, u1,v1, x, y,   z+1, 0.68f, lu, lv);
+            vtxWater(bb, u1,v0, x, top, z+1, 0.68f, lu, lv);
+            vtxWater(bb, u0,v0, x, top, z,   0.68f, lu, lv);
             quads++;
         }
         // +Z
         if (isAirForWaterSide(x, y, z + 1)) {
-            vtxModern(bb, u0,v1, x,   y,   z+1, 0.68f, lu, lv);
-            vtxModern(bb, u1,v1, x+1, y,   z+1, 0.68f, lu, lv);
-            vtxModern(bb, u1,v0, x+1, top, z+1, 0.68f, lu, lv);
-            vtxModern(bb, u0,v0, x,   top, z+1, 0.68f, lu, lv);
+            vtxWater(bb, u0,v1, x,   y,   z+1, 0.68f, lu, lv);
+            vtxWater(bb, u1,v1, x+1, y,   z+1, 0.68f, lu, lv);
+            vtxWater(bb, u1,v0, x+1, top, z+1, 0.68f, lu, lv);
+            vtxWater(bb, u0,v0, x,   top, z+1, 0.68f, lu, lv);
             quads++;
         }
         // -Z
         if (isAirForWaterSide(x, y, z - 1)) {
-            vtxModern(bb, u0,v1, x+1, y,   z,   0.68f, lu, lv);
-            vtxModern(bb, u1,v1, x,   y,   z,   0.68f, lu, lv);
-            vtxModern(bb, u1,v0, x,   top, z,   0.68f, lu, lv);
-            vtxModern(bb, u0,v0, x+1, top, z,   0.68f, lu, lv);
+            vtxWater(bb, u0,v1, x+1, y,   z,   0.68f, lu, lv);
+            vtxWater(bb, u1,v1, x,   y,   z,   0.68f, lu, lv);
+            vtxWater(bb, u1,v0, x,   top, z,   0.68f, lu, lv);
+            vtxWater(bb, u0,v0, x+1, top, z,   0.68f, lu, lv);
             quads++;
         }
         return quads;
@@ -5264,12 +5285,23 @@ public class MinecraftGL {
         }
     }
 
-    /** Wysyla jeden wierzcholek do BufferBuilder z BLOCK format. */
+    /** Writes one fixed-function BLOCK vertex. BufferBuilder's SHORT UV path
+     * stores its second argument first, hence uv2(sky, block) in memory becomes
+     * the OpenGL (block, sky) lightmap coordinate pair. */
     private void vtxModern(craft3dgl.blaze3d.vertex.BufferBuilder bb,
                            float u, float v, double px, double py, double pz,
                            float shade, int lu, int lv) {
         int col = (int) Math.max(0, Math.min(255, shade * 255f));
-        bb.vertex(px, py, pz).color(col, col, col, 255).uv(u, v).uv2(lu, lv).endVertex();
+        bb.vertex(px, py, pz).color(col, col, col, 255).uv(u, v).uv2(lv, lu).endVertex();
+    }
+
+    private void vtxWater(craft3dgl.blaze3d.vertex.BufferBuilder bb,
+                          float u, float v, double px, double py, double pz,
+                          float shade, int lu, int lv) {
+        int red = (int)Math.max(0, Math.min(255, 0x3f * shade));
+        int green = (int)Math.max(0, Math.min(255, 0x76 * shade));
+        int blue = (int)Math.max(0, Math.min(255, 0xe4 * shade));
+        bb.vertex(px, py, pz).color(red, green, blue, 255).uv(u, v).uv2(lv, lu).endVertex();
     }
 
     /** Rysuje unoszace popup damage numbers nad entities (w 2D nad HUD). */
@@ -6445,48 +6477,62 @@ public class MinecraftGL {
                         "Budowanie terenu... " + (int)Math.round(part * 100.0) + "%");
             }
         }
+        System.out.println("[ChunkBuilder] initial terrain VBOs ready: " + done + " sections");
     }
 
     void rebuildChunk(int cx, int cy, int cz) {
-        Chunk c = chunks[cx][cy][cz];
-        if (c.terrainList == 0) c.terrainList = glGenLists(1);
-        if (c.leavesList == 0) c.leavesList = glGenLists(1);
-        if (c.terrainList == 0 || c.leavesList == 0) {
-            throw new IllegalStateException("OpenGL display-list allocation failed for chunk " + cx + "," + cy + "," + cz);
+        // Minecraft 1.12 uses chunk VBOs when OpenGlHelper.useVbo() is true.
+        // The old display-list path crashes in some Windows OpenGL drivers
+        // while compiling the first terrain section (0xC0000005).
+        Chunk ch = chunks[cx][cy][cz];
+        if (!terrainVboLogged) {
+            terrainVboLogged = true;
+            System.out.println("[ChunkBuilder] using Minecraft 1.12 fixed-function VBO terrain path");
         }
-        compileChunkList(cx, cy, cz, c.terrainList, false);
-        compileChunkList(cx, cy, cz, c.leavesList, true);
-        c.dirty = false;
+        craft3dgl.blaze3d.vertex.Tesselator tess = craft3dgl.blaze3d.vertex.Tesselator.getInstance();
+        craft3dgl.blaze3d.vertex.BufferBuilder bb = tess.getBuilder();
+        craft3dgl.blaze3d.vertex.VertexFormat fmt = craft3dgl.blaze3d.vertex.DefaultVertexFormat.BLOCK;
+        buildingTerrainMesh = true;
+        try {
+            bb.begin(GL_QUADS, fmt);
+            int solid = addChunkToModernMesh(bb, cx, cy, cz, MODERN_LAYER_SOLID);
+            bb.end();
+            ch.modernVboSolid = uploadChunkLayer(ch.modernVboSolid, bb, fmt, solid);
+            ch.modernVertexCountSolid = solid * 4;
+            bb.clear();
+
+            bb.begin(GL_QUADS, fmt);
+            int cutout = addChunkToModernMesh(bb, cx, cy, cz, MODERN_LAYER_CUTOUT);
+            bb.end();
+            ch.modernVboCutout = uploadChunkLayer(ch.modernVboCutout, bb, fmt, cutout);
+            ch.modernVertexCountCutout = cutout * 4;
+            bb.clear();
+
+            bb.begin(GL_QUADS, fmt);
+            int water = addChunkToModernMesh(bb, cx, cy, cz, MODERN_LAYER_TRANSLUCENT);
+            bb.end();
+            ch.modernVboTranslucent = uploadChunkLayer(ch.modernVboTranslucent, bb, fmt, water);
+            ch.modernVertexCountTranslucent = water * 4;
+            bb.clear();
+            ch.modernDirty = false;
+            ch.dirty = false;
+        } finally {
+            buildingTerrainMesh = false;
+        }
     }
 
-    void compileChunkList(int cx, int cy, int cz, int list, boolean leaves) {
-        buildingTerrainMesh = true;
-        glNewList(list, GL_COMPILE);
-        glBindTexture(GL_TEXTURE_2D, textureAtlas);
-        int minX = cx * CHUNK, minY = cy * CHUNK, minZ = cz * CHUNK;
-        int maxX = Math.min(WORLD_X, minX + CHUNK);
-        int maxY = Math.min(WORLD_Y, minY + CHUNK);
-        int maxZ = Math.min(WORLD_Z, minZ + CHUNK);
-        glBegin(GL_QUADS);
-        for (int bx = minX; bx < maxX; bx++) for (int by = minY; by < maxY; by++) for (int bz = minZ; bz < maxZ; bz++) {
-            int id = world[bx][by][bz] & 0xff;
-            if (id == AIR) continue;
-            if (id == DOOR_BOTTOM || id == DOOR_TOP || id == CHEST) continue;
-            // Tall grass and crops use Minecraft's CUTOUT_MIPPED layer: alpha
-            // test with depth writes, before entities (not the water blend pass).
-            boolean isCross = (id == TALL_GRASS || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3);
-            if (isCross) {
-                if (leaves) continue;
-                addCrossFaces(bx, by, bz, id);
-                continue;
-            }
-            boolean transparent = (id == WATER);
-            if (transparent != leaves) continue;
-            addVisibleFaces(bx, by, bz, id);
+    craft3dgl.blaze3d.vertex.VertexBuffer uploadChunkLayer(
+            craft3dgl.blaze3d.vertex.VertexBuffer vbo,
+            craft3dgl.blaze3d.vertex.BufferBuilder bb,
+            craft3dgl.blaze3d.vertex.VertexFormat fmt, int quads) {
+        if (quads <= 0) {
+            if (vbo != null) vbo.delete();
+            return null;
         }
-        glEnd();
-        glEndList();
-        buildingTerrainMesh = false;
+        if (vbo == null) vbo = new craft3dgl.blaze3d.vertex.VertexBuffer(fmt);
+        if (vbo.getId() <= 0) throw new IllegalStateException("OpenGL VBO allocation failed");
+        vbo.upload(bb.getBuffer());
+        return vbo;
     }
 
     void addVisibleFaces(int bx, int by, int bz, int id) {
@@ -6855,7 +6901,7 @@ public class MinecraftGL {
     }
 
     void markAllChunksDirty() {
-        // Uncreated columns must not allocate OpenGL display lists. The old
+        // Uncreated columns must not allocate OpenGL terrain buffers. The old
         // implementation marked the whole 1024x1024 world and caused a native
         // 0xC0000005 crash immediately after creating a world on Windows.
         for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) {
@@ -7471,12 +7517,14 @@ public class MinecraftGL {
         for (int cx = 0; cx < CHUNKS_X; cx++) for (int cy = 0; cy < CHUNKS_Y; cy++) for (int cz = 0; cz < CHUNKS_Z; cz++) {
             Chunk c = chunks[cx][cy][cz];
             if (c != null) {
-                if (c.terrainList != 0) glDeleteLists(c.terrainList, 1);
-                if (c.leavesList != 0) glDeleteLists(c.leavesList, 1);
+                if (c.modernVboSolid != null) c.modernVboSolid.delete();
+                if (c.modernVboCutout != null) c.modernVboCutout.delete();
+                if (c.modernVboTranslucent != null) c.modernVboTranslucent.delete();
             }
         }
-        glfwDestroyWindow(window);
+        // Delete GL resources while the context is still current.
         gameRenderer.cleanup();
+        glfwDestroyWindow(window);
         glfwTerminate();
     }
 
@@ -7489,10 +7537,8 @@ public class MinecraftGL {
     // Particle przeniesiony do craft3dgl.entities.Particle
 
     static final class Chunk {
-        int terrainList;
-        int leavesList;
         boolean dirty = true;
-        // Etap 7c/d: cache VBO per layer (solid, cutout, translucent)
+        // Minecraft 1.12-style fixed-function VBO cache per render layer.
         craft3dgl.blaze3d.vertex.VertexBuffer modernVboSolid;
         int modernVertexCountSolid;
         craft3dgl.blaze3d.vertex.VertexBuffer modernVboCutout;
