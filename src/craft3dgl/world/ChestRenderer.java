@@ -72,6 +72,56 @@ public final class ChestRenderer {
         GL11.glPopAttrib();
     }
 
+    /** Render the same 1.12 ModelChest as an inventory/held/dropped item. */
+    public static boolean drawItemModel() {
+        ensureTexture();
+        if (texture <= 0) return false;
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        GL20.glUseProgram(0);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glDepthMask(true);
+        GL11.glDisable(GL11.GL_BLEND);
+        GL11.glEnable(GL11.GL_ALPHA_TEST);
+        GL11.glAlphaFunc(GL11.GL_GREATER, 0.01f);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
+        GL11.glColor4f(1f, 1f, 1f, 1f);
+        drawChest(0, 0, 0, 0, 0f);
+        GL11.glPopAttrib();
+        return true;
+    }
+
+    /** GUI transform corresponding to RenderItem's gui display of a 3D block model. */
+    public static boolean drawGuiItem(int x, int y, int size, int screenWidth, int screenHeight) {
+        ensureTexture();
+        if (texture <= 0) return false;
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        // GuiContainer normally clears depth before RenderItem's 3D models.
+        GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0.0, screenWidth, screenHeight, 0.0, -100.0, 100.0);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glTranslatef(x + size * 0.5f, y + size * 0.86f, 0f);
+        GL11.glScalef(size * 0.72f, -size * 0.72f, size * 0.72f);
+        GL11.glRotatef(24f, 1f, 0f, 0f);
+        GL11.glRotatef(45f, 0f, 1f, 0f);
+        GL11.glTranslatef(-0.5f, 0f, -0.5f);
+        drawItemModel();
+        GL11.glPopMatrix();
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPopMatrix();
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPopAttrib();
+        GL11.glColor4f(1f, 1f, 1f, 1f);
+        return true;
+    }
+
     private static void drawChest(int worldX, int worldY, int worldZ,
                                   int facing, float progress) {
         GL11.glPushMatrix();

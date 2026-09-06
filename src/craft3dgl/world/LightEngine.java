@@ -226,12 +226,23 @@ public final class LightEngine {
         return angle + (eased - angle) / 3.0f;
     }
 
-    /** World.getSunBrightness (clear weather) from Minecraft 1.12. */
+    /** World.getSunBrightness from Minecraft 1.12, including weather dimming. */
     public static float skyDayMultiplier(double dayFraction) {
+        return skyDayMultiplier(dayFraction, 0f, 0f);
+    }
+
+    public static float skyDayMultiplier(double dayFraction, float rainStrength, float thunderStrength) {
         float angle = celestialAngle(dayFraction);
         float darkness = 1.0f - ((float)Math.cos(angle * Math.PI * 2.0) * 2.0f + 0.2f);
         darkness = Math.max(0.0f, Math.min(1.0f, darkness));
-        return (1.0f - darkness) * 0.8f + 0.2f;
+        float sun = 1.0f - darkness;
+        sun *= 1.0f - clamp01(rainStrength) * 5.0f / 16.0f;
+        sun *= 1.0f - clamp01(thunderStrength) * 5.0f / 16.0f;
+        return sun * 0.8f + 0.2f;
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0f, Math.min(1f, value));
     }
 
     /** Multiplier used by World.getSkyColor and WorldProvider.getFogColor. */

@@ -51,6 +51,9 @@ java -cp "Craft3D.jar:lib/*" craft3dgl.MinecraftGL
 - `/fly` - przełącz latanie (creative)
 - `/tp <x> <y> <z>` - teleport
 - `/give <nazwa> [ilość]` - daj przedmiot
+- `/time set <day|night|tick>` - ustaw porę dnia
+- `/weather <clear|rain|thunder>` - ustaw pogodę
+- `/fps` - pokaż liczbę klatek na sekundę
 - `/help` - pomoc
 
 ## Co naprawione

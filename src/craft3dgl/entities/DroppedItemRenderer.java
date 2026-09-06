@@ -2,6 +2,7 @@ package craft3dgl.entities;
 
 import craft3dgl.DroppedItemGL;
 import craft3dgl.items.ItemRegistry;
+import craft3dgl.world.ChestRenderer;
 
 import java.util.List;
 
@@ -19,7 +20,17 @@ public final class DroppedItemRenderer {
         void drawFace(int x, int y, int z, int id, int dir);
     }
 
-    public static void drawAll(List<DroppedItemGL> drops, int textureAtlas, BlockFaceDrawer faceDrawer) {
+    public interface ItemTextureResolver {
+        int textureFor(int itemId);
+    }
+
+    public static void drawAll(List<DroppedItemGL> drops, int textureAtlas,
+                               BlockFaceDrawer faceDrawer) {
+        drawAll(drops, textureAtlas, faceDrawer, null);
+    }
+
+    public static void drawAll(List<DroppedItemGL> drops, int textureAtlas,
+                               BlockFaceDrawer faceDrawer, ItemTextureResolver textureResolver) {
         if (drops.isEmpty()) return;
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, textureAtlas);
@@ -32,17 +43,50 @@ public final class DroppedItemRenderer {
             if (ItemRegistry.isBlockItem(d.id)) {
                 glScaled(0.32, 0.32, 0.32);
                 glTranslated(-0.5, -0.5, -0.5);
-                glBegin(GL_QUADS);
-                for (int dir = 0; dir < 6; dir++) faceDrawer.drawFace(0, 0, 0, d.id, dir);
-                glEnd();
+                if (d.id == CHEST && ChestRenderer.drawItemModel()) {
+                    // The tile-entity texture/model replaces the old synthetic cube.
+                } else {
+                    glEnable(GL_TEXTURE_2D);
+                    glBindTexture(GL_TEXTURE_2D, textureAtlas);
+                    glBegin(GL_QUADS);
+                    for (int dir = 0; dir < 6; dir++) faceDrawer.drawFace(0, 0, 0, d.id, dir);
+                    glEnd();
+                }
             } else {
-                drawItemAs2D(d.id);
-                glEnable(GL_TEXTURE_2D);
-                glColor3f(1, 1, 1);
+                int itemTexture = textureResolver == null ? -1 : textureResolver.textureFor(d.id);
+                if (itemTexture > 0) drawTexturedGeneratedItem(itemTexture);
+                else drawItemAs2D(d.id);
+                glBindTexture(GL_TEXTURE_2D, textureAtlas);
             }
             glPopMatrix();
         }
-        glColor3f(1, 1, 1);
+        glEnable(GL_TEXTURE_2D);
+        glColor4f(1, 1, 1, 1);
+    }
+
+    /** Minecraft item/generated sprite: the real item PNG, with alpha on both sides. */
+    static void drawTexturedGeneratedItem(int texture) {
+        org.lwjgl.opengl.GL20.glUseProgram(0);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.1f);
+        glDisable(GL_BLEND);
+        glDisable(GL_CULL_FACE);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glColor4f(1f, 1f, 1f, 1f);
+        double size = 0.28;
+        double depth = 0.012;
+        glBegin(GL_QUADS);
+        glTexCoord2d(0, 1); glVertex3d(-size, -size, depth);
+        glTexCoord2d(1, 1); glVertex3d( size, -size, depth);
+        glTexCoord2d(1, 0); glVertex3d( size,  size, depth);
+        glTexCoord2d(0, 0); glVertex3d(-size,  size, depth);
+        glTexCoord2d(0, 1); glVertex3d(-size, -size, -depth);
+        glTexCoord2d(0, 0); glVertex3d(-size,  size, -depth);
+        glTexCoord2d(1, 0); glVertex3d( size,  size, -depth);
+        glTexCoord2d(1, 1); glVertex3d( size, -size, -depth);
+        glEnd();
     }
 
     private static void drawItemAs2D(int id) {

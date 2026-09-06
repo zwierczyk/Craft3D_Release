@@ -427,8 +427,9 @@ public class MinecraftGL {
     double screenShake = 0;
     /** Alpha czerwonego overlay (0-1) po dostaniu damage. */
     double damageFlash = 0;
-    /** Czas w grze w sekundach (day cycle: 240s = pelny dzien). */
-    double gameTime = 120.0; // start w poludnie (0.5 fraction)
+    /** Czas w grze w sekundach (Minecraft 1.12: 24000 tickow = 1200 sekund). */
+    double gameTime = 600.0; // start w poludnie (0.5 fraction)
+    final craft3dgl.world.WeatherState weather = new craft3dgl.world.WeatherState(0L);
     /** Poprzedni stan gracza w wodzie - do splash particles. */
     boolean wasInWater = false;
     /** Timer footstep dust particles. */
@@ -1509,6 +1510,8 @@ public class MinecraftGL {
         swingTimer = 0; ticksSinceLastSwing = 1000.0;
         lastAttackItemId = Integer.MIN_VALUE; sprintDisableTimer = 0.0;
         walkPhase = 0; lastPosInit = false; wasInWater = false;
+        gameTime = 600.0;
+        weather.load(false, false, 12000, 12000, 0f, 0f);
         particleSystem.clear();
     }
 
@@ -1572,6 +1575,14 @@ public class MinecraftGL {
                     out.writeLong(e.getKey());
                     out.writeInt(e.getValue());
                 }
+                // Optional V2 weather/time tail; old saves remain readable.
+                out.writeDouble(gameTime);
+                out.writeBoolean(weather.isRaining());
+                out.writeBoolean(weather.isThundering());
+                out.writeInt(weather.getRainTime());
+                out.writeInt(weather.getThunderTime());
+                out.writeFloat(weather.getRainStrength());
+                out.writeFloat(weather.getRawThunderStrength());
             }
         } catch (Exception e) { menuMessage = "Save error: " + e.getMessage(); }
     }
@@ -1690,6 +1701,16 @@ public class MinecraftGL {
                     for (int i = 0; i < fn; i++) {
                         chestFacings.put(in.readLong(), Integer.valueOf(in.readInt() & 3));
                     }
+                }
+                if (v2 && in.available() >= 26) {
+                    gameTime = in.readDouble();
+                    boolean raining = in.readBoolean();
+                    boolean thundering = in.readBoolean();
+                    int rainTime = in.readInt();
+                    int thunderTime = in.readInt();
+                    float rain = in.readFloat();
+                    float thunder = in.readFloat();
+                    weather.load(raining, thundering, rainTime, thunderTime, rain, thunder);
                 }
                 if (animals.isEmpty()) spawnAnimalsInLoadedWorld(new Random(name.hashCode()));
             }
@@ -2251,8 +2272,9 @@ public class MinecraftGL {
             damageFlash -= dt * 2.5;
             if (damageFlash < 0) damageFlash = 0;
         }
-        // Advance game time (dzien = 240s realnie)
+        // Minecraft 1.12: 24000 ticks / 20 TPS = 1200 real seconds per day.
         gameTime += dt;
+        weather.update(dt);
         // Update damage numbers
         craft3dgl.ui.DamageNumbers.update(dt);
 
@@ -2696,6 +2718,14 @@ public class MinecraftGL {
         if (item == CHEST) {
             // BlockChest#onBlockPlacedBy faces opposite the placing player.
             setChestFacing(px, py, pz, (yawToFacing(yaw) + 2) & 3);
+            // Rebuild both the chest section and (at a section boundary) the
+            // support section immediately. This guarantees the supporting
+            // block's top face is present before the inset 14/16 model appears.
+            int ccx = px / CHUNK, ccy = py / CHUNK, ccz = pz / CHUNK;
+            if (generatedColumns[ccx][ccz] && litColumns[ccx][ccz]) {
+                rebuildChunk(ccx, ccy, ccz);
+                if (py % CHUNK == 0 && ccy > 0) rebuildChunk(ccx, ccy - 1, ccz);
+            }
         }
         sound.playPlace(item);
         if (gameMode != GAMEMODE_CREATIVE) {
@@ -4184,10 +4214,14 @@ public class MinecraftGL {
     }
 
     void render() {
-        double dayTime = gameTime / 240.0;
+        double dayTime = gameTime / 1200.0;
         double dayFraction = dayTime % 1.0;
-        currentDayMult = craft3dgl.world.LightEngine.skyDayMultiplier(dayFraction);
-        float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(dayFraction);
+        float rainStrength = weather.getRainStrength();
+        float thunderStrength = weather.getThunderStrength();
+        currentDayMult = craft3dgl.world.LightEngine.skyDayMultiplier(
+                dayFraction, rainStrength, thunderStrength);
+        float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(
+                dayFraction, rainStrength, thunderStrength);
         boolean camUnderwater = isWaterAt(x, y + eyeHeight(), z);
         if (camUnderwater) {
             // EntityRenderer.updateFogColor/setupFog for Material.WATER.
@@ -4206,9 +4240,10 @@ public class MinecraftGL {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         setupProjection();
-        craft3dgl.world.SkyRenderer.drawSky(yaw, pitch, dayTime);
+        craft3dgl.world.SkyRenderer.drawSky(
+                yaw, pitch, dayTime, rainStrength, thunderStrength);
         setupCamera();
-        drawClouds(dayFraction);
+        drawClouds(dayFraction, rainStrength, thunderStrength);
         glBindTexture(GL_TEXTURE_2D, textureAtlas);
 
         // Minecraft 1.12 render order: opaque/cutout terrain, entities, translucent
@@ -4236,6 +4271,9 @@ public class MinecraftGL {
         }
         if (!USE_MODERN_RENDERER) drawChunks(true);
         if (USE_MODERN_RENDERER) drawModernChunks(true);
+        craft3dgl.world.WeatherRenderer.draw(world, worldSeed, x, y + eyeHeight(), z,
+                gameTime, rainStrength);
+        glBindTexture(GL_TEXTURE_2D, textureAtlas);
         drawParticles();
 
         Hit hit = castRay(blockReach());
@@ -4338,6 +4376,21 @@ public class MinecraftGL {
         int pcx = clampInt((int) x / CHUNK, 0, CHUNKS_X - 1);
         int pcz = clampInt((int) z / CHUNK, 0, CHUNKS_Z - 1);
         int range = 5;
+        // A VBO pass must not inherit sky/entity/UI state from the prior frame.
+        // In particular, cutout grass uses double-sided crossed quads: leaked
+        // culling made its back side disappear when the camera looked upward.
+        org.lwjgl.opengl.GL20.glUseProgram(0);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glDepthMask(true);
+        glDisable(GL_CULL_FACE);
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.1f);
+        glDisable(GL_BLEND);
+        glColor4f(1f, 1f, 1f, 1f);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
         enableFixedFunctionLightmap();
         if (leaves) {
             int waterTexture = gameRenderer.getWaterTexId();
@@ -4443,11 +4496,14 @@ public class MinecraftGL {
         org.lwjgl.opengl.GL13.glMultiTexCoord2f(org.lwjgl.opengl.GL13.GL_TEXTURE1, lightX, lightY);
     }
 
-    void drawClouds(double dayFraction) {
-        CloudRenderer.drawClouds(x, z, dayFraction);
+    void drawClouds(double dayFraction, float rainStrength, float thunderStrength) {
+        CloudRenderer.drawClouds(x, z, dayFraction, rainStrength, thunderStrength);
     }
 
-    void drawDroppedItems3D() { craft3dgl.entities.DroppedItemRenderer.drawAll(drops, textureAtlas, this::face); }
+    void drawDroppedItems3D() {
+        craft3dgl.entities.DroppedItemRenderer.drawAll(drops, textureAtlas, this::face,
+                craft3dgl.ui.ToolTextures::getTexId);
+    }
 
     void drawPlayerModel() {
         int held = selectedItemId();
@@ -4481,13 +4537,17 @@ public class MinecraftGL {
                 limbSwing, limbSwingAmount, ageInTicks, attackTime, sneaking);
         if (isBlockItem(held)) {
             glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, textureAtlas);
             glColor4f(1, 1, 1, 1);
             glScaled(0.30, 0.30, 0.30);
             glTranslated(-0.5, -0.5, -0.5);
-            glBegin(GL_QUADS);
-            for (int dir = 0; dir < 6; dir++) face(0, 0, 0, held, dir);
-            glEnd();
+            if (held == CHEST && craft3dgl.world.ChestRenderer.drawItemModel()) {
+                // Same tile-entity model/texture as the placed chest.
+            } else {
+                glBindTexture(GL_TEXTURE_2D, textureAtlas);
+                glBegin(GL_QUADS);
+                for (int dir = 0; dir < 6; dir++) face(0, 0, 0, held, dir);
+                glEnd();
+            }
             glDisable(GL_TEXTURE_2D);
         } else if (toolCategory(held) > 0) {
             glRotated(-30, 1, 0, 0);
@@ -4744,8 +4804,9 @@ public class MinecraftGL {
 
             craft3dgl.blaze3d.renderer.RenderSystem.setShader(shader);
             craft3dgl.blaze3d.renderer.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
-            double dayFraction = (gameTime / 240.0) % 1.0;
-            float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(dayFraction);
+            double dayFraction = (gameTime / 1200.0) % 1.0;
+            float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(dayFraction,
+                    weather.getRainStrength(), weather.getThunderStrength());
             craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogColor(fogC[0], fogC[1], fogC[2], 1f);
             craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogStart(20f);
             craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogEnd(120f);
@@ -4909,8 +4970,9 @@ public class MinecraftGL {
             }
 
             // Wspolny setup uniformow (fog) dla wszystkich passow
-            double dayFraction = (gameTime / 240.0) % 1.0;
-            float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(dayFraction);
+            double dayFraction = (gameTime / 1200.0) % 1.0;
+            float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(dayFraction,
+                    weather.getRainStrength(), weather.getThunderStrength());
             // Underwater fog - ciemnoniebieski, KROTKI zasieg (widoczność ograniczona)
             boolean underwater = isWaterAt(x, y + eyeHeight(), z);
             if (underwater) {
@@ -5138,17 +5200,25 @@ public class MinecraftGL {
         }
         int lu = (int)((blLv + 0.5f) * 16f);
         int lv = (int)((skyLv + 0.5f) * 16f);
-        // Diagonal 1: (x,z)->(x+1,z+1)
+        // Diagonal 1: (x,z)->(x+1,z+1), front and back like block/cross.json.
         vtxModern(bb, u0,v1, x,y,z,       1.0f, lu, lv);
         vtxModern(bb, u1,v1, x+1,y,z+1,   1.0f, lu, lv);
         vtxModern(bb, u1,v0, x+1,y+1,z+1, 1.0f, lu, lv);
         vtxModern(bb, u0,v0, x,y+1,z,     1.0f, lu, lv);
-        // Diagonal 2: (x+1,z)->(x,z+1)
+        vtxModern(bb, u0,v1, x,y,z,       1.0f, lu, lv);
+        vtxModern(bb, u0,v0, x,y+1,z,     1.0f, lu, lv);
+        vtxModern(bb, u1,v0, x+1,y+1,z+1, 1.0f, lu, lv);
+        vtxModern(bb, u1,v1, x+1,y,z+1,   1.0f, lu, lv);
+        // Diagonal 2: (x+1,z)->(x,z+1), front and back.
         vtxModern(bb, u0,v1, x+1,y,z,     1.0f, lu, lv);
         vtxModern(bb, u1,v1, x,y,z+1,     1.0f, lu, lv);
         vtxModern(bb, u1,v0, x,y+1,z+1,   1.0f, lu, lv);
         vtxModern(bb, u0,v0, x+1,y+1,z,   1.0f, lu, lv);
-        return 2;
+        vtxModern(bb, u0,v1, x+1,y,z,     1.0f, lu, lv);
+        vtxModern(bb, u0,v0, x+1,y+1,z,   1.0f, lu, lv);
+        vtxModern(bb, u1,v0, x,y+1,z+1,   1.0f, lu, lv);
+        vtxModern(bb, u1,v1, x,y,z+1,     1.0f, lu, lv);
+        return 4;
     }
 
     /** Water mesh - blok wody, top nizej (0.88) jesli nie ma wody nad. */
@@ -6133,6 +6203,15 @@ public class MinecraftGL {
 
     /** Render modelu FIRST_PERSON_RIGHT_HAND z block.json/generated.json. */
     boolean drawMinecraftFirstPersonItem(int held) {
+        if (held == CHEST) {
+            glPushMatrix();
+            glRotated(45.0, 0, 1, 0);
+            glScaled(0.40, 0.40, 0.40);
+            glTranslated(-0.5, -0.5, -0.5);
+            boolean rendered = craft3dgl.world.ChestRenderer.drawItemModel();
+            glPopMatrix();
+            if (rendered) return true;
+        }
         if (isBlockItem(held) && held != DOOR_BOTTOM) {
             craft3dgl.world.LightEngine savedLE = lightEngine;
             float savedDay = currentDayMult;
@@ -6409,6 +6488,10 @@ public class MinecraftGL {
     double atlasV1() { return TextureAtlas.atlasV1(); }
 
     void drawIcon(int block, int x, int y, int s) {
+        if (block == CHEST
+                && craft3dgl.world.ChestRenderer.drawGuiItem(x, y, s, width, height)) {
+            return;
+        }
         // Every item draw must bind its own texture. Previously a block rendered
         // after a tool/font/container sampled whichever texture happened to be
         // left bound, corrupting icons differently in hotbar and inventory.
@@ -7274,6 +7357,23 @@ public class MinecraftGL {
             }
             @Override public void clearEffects() {
                 nightVisionExpireMs = 0L;
+            }
+            @Override public boolean setTime(String value) {
+                try {
+                    long ticks;
+                    if ("day".equalsIgnoreCase(value)) ticks = 1000L;
+                    else if ("night".equalsIgnoreCase(value)) ticks = 13000L;
+                    else ticks = Long.parseLong(value);
+                    long inDay = ((ticks % 24000L) + 24000L) % 24000L;
+                    double dayFraction = (inDay / 24000.0 + 0.25) % 1.0;
+                    gameTime = dayFraction * 1200.0;
+                    return true;
+                } catch (NumberFormatException ignored) {
+                    return false;
+                }
+            }
+            @Override public boolean setWeather(String value) {
+                return weather.setWeather(value);
             }
         });
     }

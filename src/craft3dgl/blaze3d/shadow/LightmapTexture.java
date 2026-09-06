@@ -79,9 +79,15 @@ public class LightmapTexture {
             }
         }
         buffer.flip();
+        // Never upload through a texture unit inherited from world rendering.
+        // A unit-1 upload followed by a stale unit-0 binding can produce black,
+        // view-dependent cutout/grass results on Windows compatibility drivers.
+        int previousUnit = GL11.glGetInteger(org.lwjgl.opengl.GL13.GL_ACTIVE_TEXTURE);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
         GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, SIZE, SIZE,
                 GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buffer);
+        org.lwjgl.opengl.GL13.glActiveTexture(previousUnit);
     }
 
     private static float clamp(float value) {

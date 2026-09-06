@@ -22,6 +22,11 @@ public final class CloudRenderer {
     }
 
     public static void drawClouds(double playerX, double playerZ, double dayFraction) {
+        drawClouds(playerX, playerZ, dayFraction, 0f, 0f);
+    }
+
+    public static void drawClouds(double playerX, double playerZ, double dayFraction,
+                                  float rainStrength, float thunderStrength) {
         ensureTexture();
         if (cloudTexture == 0) return;
 
@@ -34,8 +39,11 @@ public final class CloudRenderer {
         glDepthMask(false);
 
         float daylight = LightEngine.skyColorMultiplier(dayFraction);
+        float rain = Math.max(0f, Math.min(1f, rainStrength));
+        float thunder = Math.max(0f, Math.min(1f, thunderStrength));
         float cloud = daylight * 0.9f + 0.1f;
-        glColor4f(cloud, cloud, cloud, 0.8f);
+        float grey = cloud * (1f - rain * 0.55f) * (1f - thunder * 0.65f);
+        glColor4f(grey, grey, grey, 0.8f);
 
         // RenderGlobal fast clouds: 32-block cells, texture scale 1/2048 and
         // movement 0.03 block per game tick (0.6 block/s).

@@ -19,8 +19,12 @@ public final class SkyRenderer {
 
     private SkyRenderer() {}
 
-    /** Sky RGB followed by fog RGB for a clear plains biome. */
+    /** Sky RGB followed by fog RGB for the current plains weather. */
     public static float[] getSkyColors(double dayFraction) {
+        return getSkyColors(dayFraction, 0f, 0f);
+    }
+
+    public static float[] getSkyColors(double dayFraction, float rainStrength, float thunderStrength) {
         float daylight = LightEngine.skyColorMultiplier(dayFraction);
 
         // Biome.getSkyColorByTemp(0.8): HSV(0.6088889, 0.5266667, 1)
@@ -28,7 +32,25 @@ public final class SkyRenderer {
         float skyG = (167.0f / 255.0f) * daylight;
         float skyB = daylight;
 
-        // WorldProvider.getFogColor, then EntityRenderer's render-distance blend.
+        // World.getSkyColor weather desaturation from MCP 9.40.
+        float rain = clamp01(rainStrength);
+        if (rain > 0f) {
+            float grey = (skyR * 0.3f + skyG * 0.59f + skyB * 0.11f) * 0.6f;
+            float keep = 1f - rain * 0.75f;
+            skyR = skyR * keep + grey * (1f - keep);
+            skyG = skyG * keep + grey * (1f - keep);
+            skyB = skyB * keep + grey * (1f - keep);
+        }
+        float thunder = clamp01(thunderStrength);
+        if (thunder > 0f) {
+            float grey = (skyR * 0.3f + skyG * 0.59f + skyB * 0.11f) * 0.2f;
+            float keep = 1f - thunder * 0.75f;
+            skyR = skyR * keep + grey * (1f - keep);
+            skyG = skyG * keep + grey * (1f - keep);
+            skyB = skyB * keep + grey * (1f - keep);
+        }
+
+        // WorldProvider.getFogColor, render-distance blend and EntityRenderer weather tint.
         float fogR = 0.7529412f * (daylight * 0.94f + 0.06f);
         float fogG = 0.84705883f * (daylight * 0.94f + 0.06f);
         float fogB = 1.0f * (daylight * 0.91f + 0.09f);
@@ -36,6 +58,12 @@ public final class SkyRenderer {
         fogR += (skyR - fogR) * distanceBlend;
         fogG += (skyG - fogG) * distanceBlend;
         fogB += (skyB - fogB) * distanceBlend;
+        fogR *= 1f - rain * 0.5f;
+        fogG *= 1f - rain * 0.5f;
+        fogB *= 1f - rain * 0.4f;
+        fogR *= 1f - thunder * 0.5f;
+        fogG *= 1f - thunder * 0.5f;
+        fogB *= 1f - thunder * 0.5f;
         return new float[]{skyR, skyG, skyB, fogR, fogG, fogB};
     }
 
@@ -53,9 +81,14 @@ public final class SkyRenderer {
      * deterministic 1.12 stars. Projection must already be configured.
      */
     public static void drawSky(double yaw, double pitch, double dayFraction) {
+        drawSky(yaw, pitch, dayFraction, 0f, 0f);
+    }
+
+    public static void drawSky(double yaw, double pitch, double dayFraction,
+                               float rainStrength, float thunderStrength) {
         ensureTextures();
         ensureStars();
-        float[] colors = getSkyColors(dayFraction);
+        float[] colors = getSkyColors(dayFraction, rainStrength, thunderStrength);
 
         glPushAttrib(GL_ALL_ATTRIB_BITS);
         glMatrixMode(GL_MODELVIEW);
@@ -76,13 +109,17 @@ public final class SkyRenderer {
         drawSkyPlane(-16.0, true);
         glDisable(GL_FOG);
 
+        float weatherVisibility = 1f - clamp01(rainStrength);
         float[] sunrise = sunriseSunset(dayFraction);
-        if (sunrise != null) drawSunriseFan(sunrise, dayFraction);
+        if (sunrise != null) {
+            sunrise[3] *= weatherVisibility;
+            drawSunriseFan(sunrise, dayFraction);
+        }
 
         glEnable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-        glColor4f(1f, 1f, 1f, 1f);
+        glColor4f(1f, 1f, 1f, weatherVisibility);
         glPushMatrix();
         glRotated(-90.0, 0.0, 1.0, 0.0);
         glRotated(LightEngine.celestialAngle(dayFraction) * 360.0f, 1.0, 0.0, 0.0);
@@ -101,7 +138,7 @@ public final class SkyRenderer {
         }
 
         glDisable(GL_TEXTURE_2D);
-        float star = LightEngine.starBrightness(dayFraction);
+        float star = LightEngine.starBrightness(dayFraction) * (1f - clamp01(rainStrength));
         if (star > 0.0f && starList != 0) {
             glColor4f(star, star, star, star);
             glCallList(starList);
@@ -258,7 +295,15 @@ public final class SkyRenderer {
     }
 
     public static float[] getFogColor(double dayFraction) {
-        float[] colors = getSkyColors(dayFraction);
+        return getFogColor(dayFraction, 0f, 0f);
+    }
+
+    public static float[] getFogColor(double dayFraction, float rainStrength, float thunderStrength) {
+        float[] colors = getSkyColors(dayFraction, rainStrength, thunderStrength);
         return new float[]{colors[3], colors[4], colors[5], 1f};
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0f, Math.min(1f, value));
     }
 }

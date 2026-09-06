@@ -21,6 +21,8 @@ public final class ChatCommands {
         boolean applyEffect(String type, int seconds);
         /** Czysci wszystkie efekty gracza. */
         void clearEffects();
+        default boolean setTime(String value) { return false; }
+        default boolean setWeather(String value) { return false; }
     }
 
     public static final int GAMEMODE_SURVIVAL = 0;
@@ -103,13 +105,28 @@ public final class ChatCommands {
                 }
                 break;
             case "time":
+                if (parts.length >= 3 && parts[1].equalsIgnoreCase("set")) {
+                    if (ctx.setTime(parts[2])) ctx.addChatMessage("Ustawiono czas: " + parts[2]);
+                    else ctx.addChatMessage("Uzycie: /time set <day|night|liczba>");
+                } else {
+                    ctx.addChatMessage("Uzycie: /time set <day|night|liczba>");
+                }
+                break;
+            case "weather":
+                if (parts.length >= 2 && ctx.setWeather(parts[1])) {
+                    ctx.addChatMessage("Ustawiono pogode: " + parts[1].toLowerCase());
+                } else {
+                    ctx.addChatMessage("Uzycie: /weather <clear|rain|thunder>");
+                }
+                break;
+            case "fps":
                 ctx.addChatMessage("FPS: " + ctx.getFps());
                 break;
             case "rebuild": case "rebuildvillages":
                 ctx.rebuildVillages();
                 break;
             case "help":
-                ctx.addChatMessage("Komendy: /gamemode, /fly, /tp, /give, /effect <night_vision|clear> [s], /rebuild, /help");
+                ctx.addChatMessage("Komendy: /gamemode, /fly, /tp, /give, /effect, /time set, /weather, /fps, /rebuild, /help");
                 break;
             default:
                 ctx.addChatMessage("Nieznana komenda: /" + name);

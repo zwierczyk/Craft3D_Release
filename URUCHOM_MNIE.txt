@@ -72,6 +72,9 @@ KOMENDY CHATU
   /fly - lot ON/OFF
   /tp X Y Z - teleport
   /give NAZWA N - daj przedmiot
+  /time set day|night|TICK - ustaw pore dnia
+  /weather clear|rain|thunder - ustaw pogode
+  /fps - pokaz liczbe klatek na sekunde
   /rebuild - przebuduj wioski
   /help - pomoc
 
