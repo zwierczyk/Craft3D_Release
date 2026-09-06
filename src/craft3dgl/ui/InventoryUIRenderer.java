@@ -60,7 +60,8 @@ public final class InventoryUIRenderer {
     private static final int TEX_PORTRAIT_X = 25;
     private static final int TEX_PORTRAIT_Y = 7;
     private static final int TEX_PORTRAIT_W = 50;
-    private static final int TEX_PORTRAIT_H = 62;
+    // Czarne pole podgladu konczy sie na y=77; model MC stoi przy y=75.
+    private static final int TEX_PORTRAIT_H = 70;
 
     private static final int TEX_CRAFT_X = 97;
     private static final int TEX_CRAFT_Y = 17;
@@ -214,8 +215,9 @@ public final class InventoryUIRenderer {
             drawSlotHover(sx, sy, mx, my);
         }
 
-        // PORTRAIT (rysowany prosto na czarnym obszarze z tekstury - dorysowujemy postac)
-        drawPortraitCharacter(portraitX(screenW), portraitY(screenH), portraitW(), portraitH());
+        // Pelny model 3D patrzy w kierunku kursora jak w GuiInventory MC 1.12.
+        drawPortraitCharacter(portraitX(screenW), portraitY(screenH), portraitW(), portraitH(),
+                screenW, screenH, mx, my);
 
         // OFFHAND
         int oX = offhandX(screenW);
@@ -361,66 +363,13 @@ public final class InventoryUIRenderer {
         glEnable(GL_TEXTURE_2D);
     }
 
-    private static void drawPortraitCharacter(int x, int y, int w, int h) {
-        // Rysujemy fragmenty tekstury Steve'a bezposrednio jako 2D flat postac
-        // Layout: glowa (front, 8x8) na gorze, cialo (front, 8x12) w srodku,
-        // rece (front, 4x12) po bokach, nogi (front, 4x12) na dole.
-        int steveTex = craft3dgl.entities.SteveRenderer.textureId();
-        if (steveTex <= 0) {
+    private static void drawPortraitCharacter(int x, int y, int w, int h,
+                                              int screenW, int screenH,
+                                              int mouseX, int mouseY) {
+        if (!craft3dgl.entities.SteveRenderer.drawInventoryPlayer(
+                screenW, screenH, x, y, w, h, mouseX, mouseY)) {
             drawPortraitFallback(x, y, w, h);
-            return;
         }
-        glEnable(GL_TEXTURE_2D);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glBindTexture(GL_TEXTURE_2D, steveTex);
-        glColor4f(1f, 1f, 1f, 1f);
-
-        // Skala: postac wysoka 32 px w skorce, chcemy zajmowac ~90% wysokosci portret boxu
-        // Wewnetrzny padding
-        int pad = 4;
-        int availH = h - 2 * pad;
-        int scale = availH / 32; // ile pixeli ekranu = 1 pixel skorki
-        if (scale < 1) scale = 1;
-        int totalH = 32 * scale;
-        int startY = y + (h - totalH) / 2;
-        // Centralnie X
-        int totalW = 16 * scale; // szerokosc calej postaci (body 8 + 2*arm 4 = 16)
-        int startX = x + (w - totalW) / 2;
-
-        float T = 1f / 64f;
-
-        // HEAD front - u=8-16, v=8-16
-        drawSkinRect(startX + 4 * scale, startY, 8 * scale, 8 * scale,
-                     8 * T, 8 * T, 16 * T, 16 * T);
-        // BODY front - u=20-28, v=20-32
-        int bodyY = startY + 8 * scale;
-        drawSkinRect(startX + 4 * scale, bodyY, 8 * scale, 12 * scale,
-                     20 * T, 20 * T, 28 * T, 32 * T);
-        // RIGHT ARM front - u=44-48, v=20-32 (nasza prawa = po lewej ekranu)
-        drawSkinRect(startX, bodyY, 4 * scale, 12 * scale,
-                     44 * T, 20 * T, 48 * T, 32 * T);
-        // LEFT ARM front - u=36-40, v=52-64
-        drawSkinRect(startX + 12 * scale, bodyY, 4 * scale, 12 * scale,
-                     36 * T, 52 * T, 40 * T, 64 * T);
-        // RIGHT LEG front - u=4-8, v=20-32
-        int legY = bodyY + 12 * scale;
-        drawSkinRect(startX + 4 * scale, legY, 4 * scale, 12 * scale,
-                     4 * T, 20 * T, 8 * T, 32 * T);
-        // LEFT LEG front - u=20-24, v=52-64
-        drawSkinRect(startX + 8 * scale, legY, 4 * scale, 12 * scale,
-                     20 * T, 52 * T, 24 * T, 64 * T);
-
-        glDisable(GL_BLEND);
-    }
-
-    private static void drawSkinRect(int x, int y, int w, int h, float u0, float v0, float u1, float v1) {
-        glBegin(GL_QUADS);
-        glTexCoord2f(u0, v0); glVertex2i(x, y);
-        glTexCoord2f(u1, v0); glVertex2i(x + w, y);
-        glTexCoord2f(u1, v1); glVertex2i(x + w, y + h);
-        glTexCoord2f(u0, v1); glVertex2i(x, y + h);
-        glEnd();
     }
 
     private static void drawPortraitFallback(int x, int y, int w, int h) {

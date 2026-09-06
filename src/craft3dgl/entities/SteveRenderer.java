@@ -147,36 +147,42 @@ public final class SteveRenderer {
 
         // === BODY (12-24 px = 0.75-1.5 blok) ===
         drawBox(16, 16, -0.25f, 0.75f, -0.125f, 8, 12, 4, false);
+        // Jacket, druga warstwa skina (PlayerModel.bodyWear, inflate 0.25 px).
+        drawBox(16, 32, -0.25f, 0.75f, -0.125f, 8, 12, 4, false, 0.25f * S);
 
         // === HEAD ===
         glPushMatrix();
-        glTranslated(0, 1.75, 0);
-        // Head yaw (osobno od body)
+        // Pivot jest na szyi, tak jak PlayerModel.head.setPos(0, 0, 0), a nie
+        // w srodku glowy. Dzieki temu pitch nie odrywa glowy od tulowia.
+        glTranslated(0, headY, 0);
         if (netHeadYaw != 0) glRotated(Math.toDegrees(netHeadYaw), 0, 1, 0);
-        // Head pitch: pitch > 0 (patrzenie w gore) → twarz w gore.
-        // Nasza twarz na +Z. glRotate(kat, 1,0,0) obraca (0,0,+1) w kierunku -Y gdy kat>0.
-        // Chcemy: pitch > 0 → twarz w +Y (up). Znak ujemny.
+        // Craft3D: dodatni pitch oznacza patrzenie w gore.
         glRotated(-Math.toDegrees(pitch), 1, 0, 0);
-        drawBox(0, 0, -0.25f, -0.25f, -0.25f, 8, 8, 8, false);
-        // Hat overlay wylaczony
+        drawBox(0, 0, -0.25f, 0.0f, -0.25f, 8, 8, 8, false);
+        // Hat/headwear, druga warstwa skina (inflate 0.5 px).
+        drawBox(32, 0, -0.25f, 0.0f, -0.25f, 8, 8, 8, false, 0.5f * S);
         glPopMatrix();
 
         // === RIGHT ARM (nasza prawa = +X po bodyYaw rot)
         // Wcielenie MC "right arm" ma pivot na -5 (LEWO w MC), ale my mamy odwrocona X przez brak scale(-1)
         // Wiec prawa reka Steve u nas na +X.
         glPushMatrix();
-        glTranslated(0.375, 1.50, 0);  // PlayerModel arm: x=+6 px, y=24 px
+        // PlayerModel: pivot (5, 2), box (-1, -2)..(3, 10), po
+        // przeliczeniu osi modelu MC na Y+ w gore.
+        glTranslated(0.3125, 1.375, 0);
         glRotated(Math.toDegrees(armR + armR_attack_x), 1, 0, 0);
         if (armR_z != 0 || armR_attack_z != 0) glRotated(Math.toDegrees(armR_z + armR_attack_z), 0, 0, 1);
-        drawBox(40, 16, -0.125f, -0.75f, -0.125f, 4, 12, 4, false);
+        drawBox(40, 16, -0.0625f, -0.625f, -0.125f, 4, 12, 4, false);
+        drawBox(40, 32, -0.0625f, -0.625f, -0.125f, 4, 12, 4, false, 0.25f * S);
         glPopMatrix();
 
         // === LEFT ARM
         glPushMatrix();
-        glTranslated(-0.375, 1.50, 0);
+        glTranslated(-0.3125, 1.375, 0);
         glRotated(Math.toDegrees(armL), 1, 0, 0);
         if (armL_z != 0) glRotated(Math.toDegrees(armL_z), 0, 0, 1);
-        drawBox(32, 48, -0.125f, -0.75f, -0.125f, 4, 12, 4, true);
+        drawBox(32, 48, -0.1875f, -0.625f, -0.125f, 4, 12, 4, true);
+        drawBox(48, 48, -0.1875f, -0.625f, -0.125f, 4, 12, 4, true, 0.25f * S);
         glPopMatrix();
 
         // === RIGHT LEG
@@ -184,6 +190,7 @@ public final class SteveRenderer {
         glTranslated(0.11875, legY, legZ);
         glRotated(Math.toDegrees(legR), 1, 0, 0);
         drawBox(0, 16, -0.125f, -0.75f, -0.125f, 4, 12, 4, false);
+        drawBox(0, 32, -0.125f, -0.75f, -0.125f, 4, 12, 4, false, 0.25f * S);
         glPopMatrix();
 
         // === LEFT LEG
@@ -191,6 +198,7 @@ public final class SteveRenderer {
         glTranslated(-0.11875, legY, legZ);
         glRotated(Math.toDegrees(legL), 1, 0, 0);
         drawBox(16, 48, -0.125f, -0.75f, -0.125f, 4, 12, 4, true);
+        drawBox(0, 48, -0.125f, -0.75f, -0.125f, 4, 12, 4, true, 0.25f * S);
         glPopMatrix();
 
         glPopMatrix();
@@ -202,12 +210,77 @@ public final class SteveRenderer {
         glColor4f(1, 1, 1, 1);
     }
 
+    /**
+     * Podglad gracza w ekwipunku zgodny z GuiInventory.drawEntityOnScreen.
+     * Cialo i glowa obracaja sie w strone aktualnej pozycji kursora.
+     */
+    public static boolean drawInventoryPlayer(int screenWidth, int screenHeight,
+                                              int portraitX, int portraitY,
+                                              int portraitWidth, int portraitHeight,
+                                              int mouseX, int mouseY) {
+        ensureLoaded();
+        if (texSteve <= 0) return false;
+
+        float guiScale = portraitWidth / 50.0f;
+        float renderX = portraitX + 26.0f * guiScale;
+        float renderY = portraitY + 68.0f * guiScale;
+        float lookY = portraitY + 18.0f * guiScale;
+        float mouseScale = 40.0f * guiScale;
+        float horizontal = mouseX - renderX;
+        float vertical = lookY - mouseY;
+
+        double bodyYaw = Math.toRadians(Math.atan(horizontal / mouseScale) * 20.0);
+        double headYaw = Math.toRadians(Math.atan(horizontal / mouseScale) * 40.0);
+        double headPitch = Math.toRadians(Math.atan(vertical / mouseScale) * 20.0);
+        float modelScale = 30.0f * guiScale;
+        float ageInTicks = (float)(System.nanoTime() / 50_000_000.0);
+
+        glPushAttrib(GL_ALL_ATTRIB_BITS);
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(portraitX, screenHeight - portraitY - portraitHeight,
+                portraitWidth, portraitHeight);
+        glDepthMask(true);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glDisable(GL_CULL_FACE);
+
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        glOrtho(0, screenWidth, screenHeight, 0, -1000, 1000);
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+        glTranslated(renderX, renderY, 0);
+        // Model ma Y+ do gory, a GUI ma Y+ w dol. GuiInventory pochyla
+        // dodatkowo caly model w pionie, niezaleznie od pitchu glowy.
+        glScaled(modelScale, -modelScale, modelScale);
+        glRotated(-Math.toDegrees(headPitch), 1, 0, 0);
+        drawPlayer(0, 0, 0, bodyYaw, headYaw, headPitch,
+                0, 0, ageInTicks, 0, false);
+        glPopMatrix();
+
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+        glPopAttrib();
+        return true;
+    }
+
     /** Rysuje texturowany box wg MC skin unwrap. Y+ w gore u nas. */
     private static void drawBox(int u, int v, float x, float y, float z,
                                 int wpx, int hpx, int dpx, boolean mirror) {
+        drawBox(u, v, x, y, z, wpx, hpx, dpx, mirror, 0.0f);
+    }
+
+    /** Box z opcjonalnym minecraftowym "inflate" dla drugiej warstwy skina. */
+    private static void drawBox(int u, int v, float x, float y, float z,
+                                int wpx, int hpx, int dpx, boolean mirror,
+                                float inflate) {
         float w = wpx * S, h = hpx * S, d = dpx * S;
-        float x0 = x, y0 = y, z0 = z;
-        float x1 = x + w, y1 = y + h, z1 = z + d;
+        float x0 = x - inflate, y0 = y - inflate, z0 = z - inflate;
+        float x1 = x + w + inflate, y1 = y + h + inflate, z1 = z + d + inflate;
 
         float T_u = 1f / 64f;
         float T_v = 1f / 64f;
@@ -277,6 +350,8 @@ public final class SteveRenderer {
         glColor4f(1, 1, 1, 1);
         // PlayerModel rightArm: addBox(-3,-2,-2, 4,12,4), rendered at 1/16 scale.
         drawBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f, 4, 12, 4, false);
+        drawBox(40, 32, -3f / 16f, -2f / 16f, -2f / 16f,
+                4, 12, 4, false, 0.25f * S);
         glDisable(GL_ALPHA_TEST);
         glDisable(GL_BLEND);
         glPopAttrib();
@@ -325,6 +400,8 @@ public final class SteveRenderer {
         // PlayerModel rightArm: setPos(-5,2,0), addBox(-3,-2,-2, 4,12,4), render(1/16).
         glTranslatef(-5f / 16f, 2f / 16f, 0);
         drawBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f, 4, 12, 4, false);
+        drawBox(40, 32, -3f / 16f, -2f / 16f, -2f / 16f,
+                4, 12, 4, false, 0.25f * S);
         glPopMatrix();
         glDisable(GL_ALPHA_TEST);
         glDisable(GL_BLEND);
@@ -363,6 +440,8 @@ public final class SteveRenderer {
         glScalef(0.65f, 0.65f, 0.65f);
 
         drawBox(40, 16, -0.125f, -0.75f, -0.125f, 4, 12, 4, false);
+        drawBox(40, 32, -0.125f, -0.75f, -0.125f,
+                4, 12, 4, false, 0.25f * S);
 
         glPopMatrix();
         glDisable(GL_ALPHA_TEST);
