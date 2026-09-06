@@ -120,6 +120,9 @@ public class MinecraftGL {
     static final double PLAYER_RADIUS = 0.28;
     static final double PLAYER_HEIGHT = 1.80;
     static final double EYE_HEIGHT = 1.62;
+    // EntityPlayer.updateSize/getEyeHeight z MCP 9.40.
+    static final double SNEAK_HEIGHT = 1.65;
+    static final double SNEAK_EYE_HEIGHT = 1.54;
     static final double WALK_SPEED = 4.317;
     static final double SPRINT_SPEED = 5.612;
     static final double SNEAK_SPEED = 1.295;
@@ -3601,8 +3604,8 @@ public class MinecraftGL {
         }
     }
 
-    double playerHeight() { return sneaking ? 1.50 : PLAYER_HEIGHT; }
-    double eyeHeight() { return sneaking ? 1.27 : EYE_HEIGHT; }
+    double playerHeight() { return sneaking ? SNEAK_HEIGHT : PLAYER_HEIGHT; }
+    double eyeHeight() { return sneaking ? SNEAK_EYE_HEIGHT : EYE_HEIGHT; }
 
     boolean playerTouchingWater() {
         int minX = (int)Math.floor(x - PLAYER_RADIUS);
@@ -3840,7 +3843,9 @@ public class MinecraftGL {
             float attackTime = swingTimer > 0 ? (float)(1.0 - swingTimer) : 0f;
             craft3dgl.entities.SteveRenderer.drawPlayer(x, y, z, bodyYaw, yaw, pitch,
                 this.limbSwing, this.limbSwingAmount, ageInTicks, attackTime, sneaking);
-            if (held > 0 && heldCount > 0) drawPlayerHeldItem3D(held);
+            if (held > 0 && heldCount > 0) {
+                drawPlayerHeldItem3D(held, ageInTicks, attackTime);
+            }
         } else {
             // Fallback do starego
             craft3dgl.entities.PlayerRenderer.drawPlayerModel(x, y, z, yaw, pitch, walkPhase, swingTimer, held, heldCount, textureAtlas, this::face);
@@ -3848,18 +3853,13 @@ public class MinecraftGL {
     }
 
     /** Item w rece gracza 3rd person - dlon prawej reki Steve'a. */
-    void drawPlayerHeldItem3D(int held) {
+    void drawPlayerHeldItem3D(int held, float ageInTicks, float attackTime) {
         glPushMatrix();
         glTranslated(x, y, z);
         glRotated(Math.toDegrees(bodyYaw), 0, 1, 0);
-        if (sneaking) {
-            glTranslated(0, -0.125, 0.25);
-            glRotated(Math.toDegrees(0.5), 1, 0, 0);
-        }
-        // Pivot dloni prawej reki (jak w SteveRenderer): (0.3125, 1.375, 0)
-        glTranslated(0.3125, 1.375, 0);
-        // Zejdz do konca reki (dlon)
-        glTranslated(0, -0.7, 0.1);
+        // Ten sam pivot i animacja co prawe ramie modelu, rowniez przy skradaniu.
+        craft3dgl.entities.SteveRenderer.applyThirdPersonRightHandTransform(
+                limbSwing, limbSwingAmount, ageInTicks, attackTime, sneaking);
         if (isBlockItem(held)) {
             glEnable(GL_TEXTURE_2D);
             glBindTexture(GL_TEXTURE_2D, textureAtlas);

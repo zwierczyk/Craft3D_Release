@@ -18,6 +18,9 @@ import static org.lwjgl.opengl.GL11.*;
  */
 public final class SteveRenderer {
     private static final float S = 1f / 16f;
+    // RenderPlayer.doRender + ModelBiped.render/setRotationAngles, MCP 9.40.
+    public static final double SNEAK_RENDER_OFFSET_Y = -0.325;
+    public static final double SNEAK_ARM_ROTATION_X = 0.4;
 
     private static int texSteve = -1;
     private static boolean initialized = false;
@@ -110,18 +113,23 @@ public final class SteveRenderer {
             armR_attack_z = Math.sin(attackTime * Math.PI) * -0.4;
         }
 
-        // Sneak modyfikacje
-        double bodyRotX = 0;
-        double legY = 0.75;   // Y biodra (w blokach)
-        double legZ = 0;
-        double headY = 1.5;
+        // ModelBiped.setRotationAngles + RenderPlayer.doRender z MCP 9.40.
+        // Os Y modelu Minecrafta jest skierowana w dol, dlatego pivot nog przy
+        // skradaniu (9 px zamiast 12 px) przesuwa sie u nas W GORE.
+        double modelYOffset = 0.0;
+        double bodyRotX = 0.0;
+        double legY = 0.75;       // rotationPointY = 12 px
+        double legZ = -0.00625;   // rotationPointZ = 0.1 px, za graczem
+        double headY = 1.5;       // rotationPointY = 0 px
         if (sneaking) {
+            // RenderPlayer: -0.125; ModelBiped.render: translate(0, 0.2, 0).
+            modelYOffset = SNEAK_RENDER_OFFSET_Y;
             bodyRotX = 0.5;
-            armR += 0.4;
-            armL += 0.4;
-            legY = 0.5625;  // 9 px w blokach
-            legZ = 0.25;    // 4 px w blokach
-            headY = 1.5625; // 25 px
+            armR += SNEAK_ARM_ROTATION_X;
+            armL += SNEAK_ARM_ROTATION_X;
+            legY = 0.9375;        // rotationPointY = 9 px
+            legZ = -0.25;         // rotationPointZ = 4 px, za graczem
+            headY = 1.4375;       // rotationPointY = 1 px
         }
 
         // netHeadYaw dla glowy
@@ -137,18 +145,20 @@ public final class SteveRenderer {
         // A wektor ruchu naszego dla yaw=+90 = (sin(90), 0, cos(90)) = (1, 0, 0) = +X. OK, zgadza sie.
         glRotated(Math.toDegrees(bodyYaw + bodyYawExtra), 0, 1, 0);
 
-        if (sneaking) {
-            glTranslated(0, -0.125, 0);
-        }
-        if (bodyRotX != 0) {
-            // Pochylenie ciala do przodu (sneak)
-            glRotated(Math.toDegrees(bodyRotX), 1, 0, 0);
+        if (modelYOffset != 0) {
+            glTranslated(0, modelYOffset, 0);
         }
 
         // === BODY (12-24 px = 0.75-1.5 blok) ===
-        drawBox(16, 16, -0.25f, 0.75f, -0.125f, 8, 12, 4, false);
+        // W MCP tylko tulow ma rotateAngleX=0.5. Obracanie calego modelu
+        // powodowalo zapadanie nog i nienaturalne odchylenie glowy.
+        glPushMatrix();
+        glTranslated(0, 1.5, 0);
+        if (bodyRotX != 0) glRotated(Math.toDegrees(bodyRotX), 1, 0, 0);
+        drawBox(16, 16, -0.25f, -0.75f, -0.125f, 8, 12, 4, false);
         // Jacket, druga warstwa skina (PlayerModel.bodyWear, inflate 0.25 px).
-        drawBox(16, 32, -0.25f, 0.75f, -0.125f, 8, 12, 4, false, 0.25f * S);
+        drawBox(16, 32, -0.25f, -0.75f, -0.125f, 8, 12, 4, false, 0.25f * S);
+        glPopMatrix();
 
         // === HEAD ===
         glPushMatrix();
@@ -208,6 +218,45 @@ public final class SteveRenderer {
         glDisable(GL_BLEND);
         glPopAttrib();
         glColor4f(1, 1, 1, 1);
+    }
+
+    /**
+     * Doklada do aktualnej macierzy dokladnie te same transformacje prawego
+     * ramienia co drawPlayer, a nastepnie przechodzi do dloni. Wywolujacy
+     * ustawia wczesniej pozycje gracza i bodyYaw.
+     */
+    public static void applyThirdPersonRightHandTransform(float limbSwing,
+                                                           float limbSwingAmount,
+                                                           float ageInTicks,
+                                                           float attackTime,
+                                                           boolean sneaking) {
+        double armX = Math.cos(limbSwing * 0.6662 + Math.PI)
+                * 2.0 * limbSwingAmount * 0.5;
+        double armZ = Math.cos(ageInTicks * 0.09) * 0.05 + 0.05;
+        armX += Math.sin(ageInTicks * 0.067) * 0.05;
+
+        double bodyYawExtra = 0.0;
+        if (attackTime > 0) {
+            bodyYawExtra = Math.sin(Math.sqrt(attackTime) * Math.PI * 2) * 0.2;
+            double f1 = 1.0 - attackTime;
+            f1 = f1 * f1;
+            f1 = f1 * f1;
+            f1 = 1.0 - f1;
+            armX -= Math.sin(f1 * Math.PI) * 1.2;
+            armZ += Math.sin(attackTime * Math.PI) * -0.4;
+        }
+        if (sneaking) armX += SNEAK_ARM_ROTATION_X;
+
+        if (bodyYawExtra != 0) {
+            glRotated(Math.toDegrees(bodyYawExtra), 0, 1, 0);
+        }
+        if (sneaking) {
+            glTranslated(0, SNEAK_RENDER_OFFSET_Y, 0);
+        }
+        glTranslated(0.3125, 1.375, 0);
+        glRotated(Math.toDegrees(armX), 1, 0, 0);
+        if (armZ != 0) glRotated(Math.toDegrees(armZ), 0, 0, 1);
+        glTranslated(0, -0.7, 0.1);
     }
 
     /**
