@@ -3010,31 +3010,12 @@ public class MinecraftGL {
 
     void attackVillager(VillagerGL v) {
         int dmg = craft3dgl.combat.DamageSystem.villagerDamage(selectedItemId());
-        int dealtDamage = Math.min(dmg, Math.max(0, v.health));
         v.health -= dmg;
         sound.playHurt();
         v.vx += Math.sin(yaw) * 1.8;
         v.vz += Math.cos(yaw) * 1.8;
         v.targetYaw = Math.atan2(v.vx, v.vz);
-        // Damage number + vanilla DAMAGE_INDICATOR particles.
-        craft3dgl.ui.DamageNumbers.spawn(v.x, v.y + 2.0, v.z, "-" + dmg, 1f, 0.85f, 0.2f);
         craft3dgl.ui.Crosshair.triggerHit();
-        spawnDamageIndicators(v.x,
-                v.y + craft3dgl.entities.EntityConstants.VILLAGER_HEIGHT * 0.5, v.z, dealtDamage);
-    }
-
-    /** MCP EntityPlayer attack: DAMAGE_INDICATOR particles for more than two damage points. */
-    void spawnDamageIndicators(double px, double py, double pz, int damage) {
-        if (damage <= 2) return;
-        int count = (int)(damage * 0.5);
-        for (int i = 0; i < count; i++) {
-            double spawnX = px + random.nextGaussian() * 0.1;
-            double spawnZ = pz + random.nextGaussian() * 0.1;
-            particleSystem.add(Particle.damageIndicator(random, spawnX, py, spawnZ,
-                    random.nextGaussian() * 0.2,
-                    random.nextGaussian() * 0.2,
-                    random.nextGaussian() * 0.2));
-        }
     }
 
     void openVillagerTrade(VillagerGL v) {
@@ -3410,22 +3391,29 @@ public class MinecraftGL {
         return interval[1] >= interval[0];
     }
 
+    /** Preserve Craft3D's animal-hit cue, now rendered with MCP ParticleHeart sprite 80. */
+    void spawnAnimalHitHearts(AnimalGL animal) {
+        double width = craft3dgl.entities.EntityConstants.ANIMAL_RADIUS * 2.0;
+        double height = craft3dgl.entities.EntityConstants.animalHeight(animal.type);
+        for (int i = 0; i < 3; i++) {
+            double px = animal.x + (random.nextDouble() * 2.0 - 1.0) * width;
+            double py = animal.y + 0.5 + random.nextDouble() * height;
+            double pz = animal.z + (random.nextDouble() * 2.0 - 1.0) * width;
+            particleSystem.add(Particle.heart(random, px, py, pz));
+        }
+    }
+
     void attackAnimal(AnimalGL a) {
         int item = selectedItemId();
         int dmg = craft3dgl.combat.DamageSystem.meleeDamage(item);
-        int dealtDamage = Math.min(dmg, Math.max(0, a.health));
         a.health -= dmg;
         // Dzwiek zalezny od typu zwierzat
         if (a.type == AnimalGL.COW) sound.playCow();
         else if (a.type == AnimalGL.PIG) sound.playPig();
         else if (a.type == AnimalGL.SHEEP) sound.playSheep();
         else sound.playAnimal();
-        // Damage number + vanilla DAMAGE_INDICATOR particles.
-        craft3dgl.ui.DamageNumbers.spawn(a.x, a.y + 1.5, a.z, "-" + dmg, 1f, 0.85f, 0.2f);
         craft3dgl.ui.Crosshair.triggerHit();
-        spawnDamageIndicators(a.x,
-                a.y + craft3dgl.entities.EntityConstants.animalHeight(a.type) * 0.5,
-                a.z, dealtDamage);
+        spawnAnimalHitHearts(a);
         double fx = Math.sin(yaw), fz = Math.cos(yaw);
         a.panicTimer = 5.0;
         a.panicRecalc = 0;

@@ -12,8 +12,7 @@ public final class Particle {
         BLOCK_DUST,
         WATER_BUBBLE,
         WATER_SPLASH,
-        CRIT,
-        DAMAGE_INDICATOR
+        HEART
     }
 
     public final Type type;
@@ -120,31 +119,15 @@ public final class Particle {
         return particle;
     }
 
-    /** MCP ParticleCrit / CRIT. */
-    public static Particle crit(Random random, double x, double y, double z,
-                                double xSpeed, double ySpeed, double zSpeed) {
-        Particle particle = base(random, Type.CRIT, x, y, z, 0.0, 0.0, 0.0);
-        particle.motionX = particle.motionX * 0.1 + xSpeed * 0.4;
-        particle.motionY = particle.motionY * 0.1 + ySpeed * 0.4;
-        particle.motionZ = particle.motionZ * 0.1 + zSpeed * 0.4;
-        float shade = random.nextFloat() * 0.3f + 0.6f;
-        particle.red = particle.green = shade;
-        particle.blue = particle.red;
-        particle.scale *= 0.75f;
-        particle.maxAge = Math.max(1, (int)(6.0f / (random.nextFloat() * 0.8f + 0.6f)));
-        particle.textureIndex = 65;
-        // ParticleCrit advances once in its constructor in Minecraft 1.12.
-        particle.tick(null);
-        return particle;
-    }
-
-    /** MCP DAMAGE_INDICATOR factory: ParticleCrit with sprite 67, +1 Y speed and 20 ticks. */
-    public static Particle damageIndicator(Random random, double x, double y, double z,
-                                           double xSpeed, double ySpeed, double zSpeed) {
-        Particle crit = crit(random, x, y, z, xSpeed, ySpeed + 1.0, zSpeed);
-        Particle particle = crit.copyAs(Type.DAMAGE_INDICATOR);
-        particle.textureIndex = 67;
-        particle.maxAge = 20;
+    /** MCP ParticleHeart / HEART, using the red heart at sprite index 80. */
+    public static Particle heart(Random random, double x, double y, double z) {
+        Particle particle = base(random, Type.HEART, x, y, z, 0.0, 0.0, 0.0);
+        particle.motionX *= 0.01;
+        particle.motionY = particle.motionY * 0.01 + 0.1;
+        particle.motionZ *= 0.01;
+        particle.scale *= 0.75f * 2.0f;
+        particle.maxAge = 16;
+        particle.textureIndex = 80;
         return particle;
     }
 
@@ -195,7 +178,7 @@ public final class Particle {
     }
 
     public float renderScale(float partialTicks) {
-        if (type == Type.CRIT || type == Type.DAMAGE_INDICATOR) {
+        if (type == Type.HEART) {
             float growth = ((float)age + partialTicks) / (float)Math.max(1, maxAge) * 32.0f;
             return scale * Math.min(growth, 1.0f);
         }
@@ -233,15 +216,20 @@ public final class Particle {
                 if (world != null && world.isWater(x, y, z)) expired = true;
                 break;
 
-            case CRIT:
-            case DAMAGE_INDICATOR:
+            case HEART:
                 if (age++ >= maxAge) expired = true;
                 move(world, motionX, motionY, motionZ);
-                green *= 0.96f;
-                blue *= 0.9f;
-                motionX *= 0.7;
-                motionY = motionY * 0.7 - 0.02;
-                motionZ *= 0.7;
+                if (y == prevY) {
+                    motionX *= 1.1;
+                    motionZ *= 1.1;
+                }
+                motionX *= 0.86;
+                motionY *= 0.86;
+                motionZ *= 0.86;
+                if (onGround) {
+                    motionX *= 0.7;
+                    motionZ *= 0.7;
+                }
                 break;
 
             case BLOCK_CRACK:

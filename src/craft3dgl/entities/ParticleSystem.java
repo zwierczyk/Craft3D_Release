@@ -220,8 +220,7 @@ public final class ParticleSystem {
                 if (distance >= 20 && distance <= 38) setSpritePixel(argb, 32, x, y, 0xD0D8F4FF);
             }
         }
-        drawStar(argb, 65, 0xFFE5E5E5);
-        drawStar(argb, 67, 0xFFFFF4C0);
+        drawFallbackHeart(argb);
 
         ByteBuffer pixels = BufferUtils.createByteBuffer(128 * 128 * 4);
         for (int color : argb) putArgb(pixels, color);
@@ -250,10 +249,13 @@ public final class ParticleSystem {
         pixels.put((byte)((argb >> 24) & 255));
     }
 
-    private static void drawStar(int[] image, int sprite, int argb) {
-        int[][] points = {{3,0},{4,0},{3,1},{4,1},{2,2},{5,2},{0,3},{1,3},{2,3},{3,3},
-                {4,3},{5,3},{6,3},{7,3},{3,4},{4,4},{2,5},{5,5},{1,6},{6,6}};
-        for (int[] point : points) setSpritePixel(image, sprite, point[0], point[1], argb);
+    private static void drawFallbackHeart(int[] image) {
+        String[] rows = {"0110110", "1111111", "1111111", "0111110", "0011100", "0001000"};
+        for (int y = 0; y < rows.length; y++) {
+            for (int x = 0; x < rows[y].length(); x++) {
+                if (rows[y].charAt(x) == '1') setSpritePixel(image, 80, x, y + 1, 0xFFE02020);
+            }
+        }
     }
 
     private static void setSpritePixel(int[] image, int sprite, int x, int y, int argb) {
