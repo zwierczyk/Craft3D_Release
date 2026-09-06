@@ -68,8 +68,8 @@ public final class Translations {
         map.put("creative.trash.short", new String[]{"Kosz", "Trash"});
         map.put("inv.title", new String[]{"Ekwipunek", "Inventory"});
         map.put("crafting.title", new String[]{"Stol Rzemieslniczy", "Crafting Table"});
-        map.put("chest.title", new String[]{"Skrzynka", "Chest"});
-        map.put("section.craft", new String[]{"Crafting", "Crafting"});
+        map.put("chest.title", new String[]{"Skrzynia", "Chest"});
+        map.put("section.craft", new String[]{"Konstruowanie", "Crafting"});
         map.put("section.inventory", new String[]{"Ekwipunek", "Inventory"});
         map.put("section.hotbar", new String[]{"Hotbar", "Hotbar"});
         map.put("section.armor", new String[]{"Zbroja", "Armor"});

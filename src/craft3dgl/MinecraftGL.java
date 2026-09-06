@@ -271,7 +271,10 @@ public class MinecraftGL {
     static float foodTuneScale = 0.400f;
     long lastTuneLogTime = 0;
     /** Etap 6+ - modern MC-style renderer (RenderType + core shadery). F7 toggle. */
-    static boolean USE_MODERN_RENDERER = true;   // shader terrain renderer is the default
+    // Minecraft 1.12 has no JSON core-shader terrain pipeline. Its default is
+    // fixed-function multitexturing (atlas * 16x16 lightmap); F7 keeps the later
+    // shader experiment available only as a comparison/debug path.
+    static boolean USE_MODERN_RENDERER = false;
     /** GameRenderer - laduje core shadery raz na start. */
     final craft3dgl.blaze3d.renderer.GameRenderer gameRenderer = craft3dgl.blaze3d.renderer.GameRenderer.getInstance();
     boolean menuMouseWasDown = false;
@@ -315,14 +318,32 @@ public class MinecraftGL {
     // Delegowane mapy (dla starego API i serializacji)
     final java.util.HashMap<Long, int[]> chestIds = chestStorage.ids;
     final java.util.HashMap<Long, int[]> chestCounts = chestStorage.counts;
+    final java.util.HashMap<Long, Integer> chestFacings = chestStorage.facings;
     boolean chestOpen = false;
     int chestOpenX, chestOpenY, chestOpenZ;
+    /** TileEntityChest lidAngle, 0 closed .. 1 open. */
+    float chestLidProgress = 0f;
     boolean chestMouseWasDown = false;
 
     static long packChestKey(int x, int y, int z) { return ChestStorage.packKey(x, y, z); }
     int[] chestIdsAt(int x, int y, int z) { return chestStorage.idsAt(x, y, z); }
     int[] chestCountsAt(int x, int y, int z) { return chestStorage.countsAt(x, y, z); }
+    int chestFacingAt(int x, int y, int z) { return chestStorage.facingAt(x, y, z); }
+    void setChestFacing(int x, int y, int z, int facing) { chestStorage.setFacing(x, y, z, facing); }
     void removeChest(int x, int y, int z) { chestStorage.remove(x, y, z); }
+
+    /** Upgrade old saves where an unopened, empty chest had no tile-entity entry. */
+    void registerMissingChestTileEntities() {
+        for (int bx = 0; bx < WORLD_X; bx++) {
+            for (int by = 0; by < WORLD_Y; by++) {
+                for (int bz = 0; bz < WORLD_Z; bz++) {
+                    if ((world[bx][by][bz] & 0xff) != CHEST) continue;
+                    chestIdsAt(bx, by, bz);
+                    chestCountsAt(bx, by, bz);
+                }
+            }
+        }
+    }
 
     // Adapter kolizji: pelne bloki oraz dokladny panel drzwi o grubosci 3/16.
     final craft3dgl.entities.EntityCollision.SolidCheck entitySolidCheck = new craft3dgl.entities.EntityCollision.SolidCheck() {
@@ -1290,7 +1311,7 @@ public class MinecraftGL {
         chatOpen = false; creativeInvOpen = false; creativeTab = 0;
         creativeSearch.setLength(0); chatInput.setLength(0); chatLog.clear();
         doorMeta.clear();
-        chestIds.clear(); chestCounts.clear(); chestOpen = false;
+        chestStorage.clear(); chestOpen = false; chestLidProgress = 0f;
         swingTimer = 0; ticksSinceLastSwing = 1000.0;
         lastAttackItemId = Integer.MIN_VALUE; sprintDisableTimer = 0.0;
         walkPhase = 0; lastPosInit = false; wasInWater = false;
@@ -1345,6 +1366,12 @@ public class MinecraftGL {
                 // Spawnowane wioski.
                 out.writeInt(spawnedVillageCells.size());
                 for (Long k : spawnedVillageCells) out.writeLong(k);
+                // Optional V2 tail. Older V2 saves simply end before this map.
+                out.writeInt(chestFacings.size());
+                for (java.util.Map.Entry<Long, Integer> e : chestFacings.entrySet()) {
+                    out.writeLong(e.getKey());
+                    out.writeInt(e.getValue());
+                }
             }
         } catch (Exception e) { menuMessage = "Save error: " + e.getMessage(); }
     }
@@ -1430,6 +1457,12 @@ public class MinecraftGL {
                     int sn = in.readInt();
                     for (int i = 0; i < sn; i++) spawnedVillageCells.add(in.readLong());
                 }
+                if (v2 && in.available() >= 4) {
+                    int fn = in.readInt();
+                    for (int i = 0; i < fn; i++) {
+                        chestFacings.put(in.readLong(), Integer.valueOf(in.readInt() & 3));
+                    }
+                }
                 if (animals.isEmpty()) spawnAnimalsInLoadedWorld(new Random(name.hashCode()));
             }
             currentWorldName = name;
@@ -1449,6 +1482,7 @@ public class MinecraftGL {
                 lightEngine.rebuildRegion(0, 0, WORLD_X - 1, WORLD_Z - 1);
                 System.out.println("[loadWorld] light rebuilt in " + (System.currentTimeMillis() - t0) + "ms");
             }
+            registerMissingChestTileEntities();
             markAllChunksDirty();
             seedWaterQueue();
             return true;
@@ -1582,6 +1616,11 @@ public class MinecraftGL {
     }
 
     void update(double dt) {
+        // TileEntityChest.update(): move lid by 0.1 each 20 Hz tick.
+        float lidStep = (float) (dt * 2.0);
+        if (chestOpen) chestLidProgress = Math.min(1f, chestLidProgress + lidStep);
+        else chestLidProgress = Math.max(0f, chestLidProgress - lidStep);
+
         boolean esc = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
         boolean eKey = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
         boolean qKey = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS;
@@ -2051,6 +2090,9 @@ public class MinecraftGL {
         }
 
         boolean movingTooFastToSweep = Math.hypot(dx, dz) / Math.max(0.001, dt) * 0.05 >= 0.1;
+        // Minecraft#clickMouse always invokes EntityPlayer.swingArm, including
+        // misses. This fixes LMB doing nothing when the crosshair points at air.
+        if (left && !leftWasDown) swingTimer = 1.0;
         if (left && targetVillager != null && !leftWasDown) {
             attackVillager(targetVillager, sprinting, inWater, movingTooFastToSweep);
             swingTimer = 1.0;
@@ -2073,25 +2115,17 @@ public class MinecraftGL {
 
         updateEating(right, dt);
         if (right && !rightWasDown && eatingItemId == 0) {
-            swingTimer = 1.0;
             if (targetVillager != null) {
                 openVillagerTrade(targetVillager);
+                // SUCCESS from processRightClick(Entity) swings the active hand.
+                swingTimer = 1.0;
             } else if (!startEatingSelected()) {
-                boolean placed = false;
-                if (hit.hit) {
-                    int beforeId = selectedItemId();
-                    int beforeCount = selectedItemCount();
-                    place(hit);
-                    // place() zmienia inwentaryz/swiat - sprawdz czy cos sie zmienilo
-                    int afterId = selectedItemId();
-                    int afterCount = selectedItemCount();
-                    placed = (beforeId != afterId) || (beforeCount != afterCount)
-                          || (hit.block == CRAFTING_TABLE) || (hit.block == CHEST)
-                          || (hit.block == DOOR_BOTTOM) || (hit.block == DOOR_TOP);
-                }
-                // CREATIVE PICK BLOCK: jezeli nic nie postawilo i jest blok pod celownikiem,
-                // wez ten blok do reki
-                if (!placed && hit.hit && gameMode == GAMEMODE_CREATIVE && !isInteractableBlock(hit.block)) {
+                boolean actionSucceeded = hit.hit && place(hit);
+                // Minecraft#rightClickMouse only swings for a SUCCESS action
+                // result. A miss, failed placement and creative pick do not swing.
+                if (actionSucceeded) swingTimer = 1.0;
+                if (!actionSucceeded && hit.hit && gameMode == GAMEMODE_CREATIVE
+                        && !isInteractableBlock(hit.block)) {
                     pickBlockToHand(hit.block);
                 }
             }
@@ -2230,7 +2264,7 @@ public class MinecraftGL {
             int brokenId = hit.block;
             // Spawn okruchow bloku (particles) PRZED zniszczeniem (potrzeba koloru bloku)
             spawnBlockBreakParticles(hit.x, hit.y, hit.z, brokenId);
-            screenShake = Math.max(screenShake, 0.35);
+            // Minecraft 1.12 does not shake the camera when a block finishes breaking.
             craft3dgl.ui.Crosshair.triggerHit();
             setBlock(hit.x, hit.y, hit.z, AIR);
             sound.playBreak(brokenId);
@@ -2320,25 +2354,25 @@ public class MinecraftGL {
 
     double hardness(int block) { return craft3dgl.world.MiningMechanics.hardness(block); }
 
-    void place(Hit hit) {
+    /** PlayerControllerMP#processRightClickBlock result: true only for SUCCESS. */
+    boolean place(Hit hit) {
         if (hit.block == CRAFTING_TABLE) {
             openInventory(true);
-            return;
+            return true;
         }
         if (hit.block == CHEST) {
             openChest(hit.x, hit.y, hit.z);
-            return;
+            return true;
         }
         // === MOTYKA na DIRT/GRASS -> FARMLAND ===
         int curItem = selectedItemId();
         if ((curItem == ITEM_WOOD_HOE || curItem == ITEM_STONE_HOE) && selectedItemCount() > 0) {
             if ((hit.block == DIRT || hit.block == GRASS) && hit.ny > 0) {
-                // Tylko gdy nad blokiem jest AIR (zeby nie zamienic pod blokami)
                 int abx = hit.x, aby = hit.y + 1, abz = hit.z;
                 if (inWorld(abx, aby, abz) && (world[abx][aby][abz] & 0xff) == AIR) {
                     setBlock(hit.x, hit.y, hit.z, FARMLAND);
                     sound.playPlace(DIRT);
-                    return;
+                    return true;
                 }
             }
         }
@@ -2353,7 +2387,7 @@ public class MinecraftGL {
                     invCount[selectedSlot]--;
                     if (invCount[selectedSlot] <= 0) { invId[selectedSlot] = 0; invCount[selectedSlot] = 0; }
                 }
-                return;
+                return true;
             }
         }
         if (hit.block == DOOR_BOTTOM || hit.block == DOOR_TOP) {
@@ -2361,7 +2395,7 @@ public class MinecraftGL {
             int byBot = hit.block == DOOR_BOTTOM ? hit.y : hit.y - 1;
             int byTop = byBot + 1;
             if (!inWorld(bx, byBot, hit.z)
-                    || (world[bx][byBot][hit.z] & 0xff) != DOOR_BOTTOM) return;
+                    || (world[bx][byBot][hit.z] & 0xff) != DOOR_BOTTOM) return false;
 
             int meta = getDoorMeta(bx, byBot, hit.z);
             boolean wasOpen = DoorSystem.isOpen(meta);
@@ -2374,24 +2408,22 @@ public class MinecraftGL {
             markDirtyAround(bx, byBot, hit.z);
             markDirtyAround(bx, byTop, hit.z);
             if (wasOpen) sound.playDoorClose(); else sound.playDoorOpen();
-            return;
+            return true;
         }
 
         int item = selectedItemId();
-        if (!isBlockItem(item) || selectedItemCount() <= 0) return;
+        if (!isBlockItem(item) || selectedItemCount() <= 0) return false;
 
         // ItemDoor.onItemUse z MC 1.12: drzwi stawia sie wylacznie na gornej
         // scianie pelnego bloku, potrzebne sa dwie wymienialne komorki.
         if (item == DOOR_BOTTOM) {
-            if (hit.ny != 1) return;
-            // Gdy klikniety blok jest replaceable (np. wysoka trawa), ItemDoor
-            // zastępuje go zamiast przesuwac pozycje o jeden blok w gore.
+            if (hit.ny != 1) return false;
             boolean replaceClicked = isReplaceableForDoor(hit.block);
             int px = hit.x, py = replaceClicked ? hit.y : hit.y + 1, pz = hit.z;
-            if (!inWorld(px, py, pz) || !inWorld(px, py + 1, pz)) return;
-            if (!isNormalCubeForDoor(px, py - 1, pz)) return;
+            if (!inWorld(px, py, pz) || !inWorld(px, py + 1, pz)) return false;
+            if (!isNormalCubeForDoor(px, py - 1, pz)) return false;
             if (!isReplaceableForDoor(world[px][py][pz] & 0xff)
-                    || !isReplaceableForDoor(world[px][py + 1][pz] & 0xff)) return;
+                    || !isReplaceableForDoor(world[px][py + 1][pz] & 0xff)) return false;
 
             double cosPitch = Math.cos(pitch);
             double hitWorldX = x + Math.sin(yaw) * cosPitch * hit.dist;
@@ -2412,20 +2444,25 @@ public class MinecraftGL {
                 invCount[selectedSlot]--;
                 if (invCount[selectedSlot] <= 0) { invId[selectedSlot] = 0; invCount[selectedSlot] = 0; }
             }
-            return;
+            return true;
         }
 
         int px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
-        if (!inWorld(px, py, pz)) return;
+        if (!inWorld(px, py, pz)) return false;
         int existing = world[px][py][pz] & 0xff;
-        if (existing != AIR && existing != WATER) return;
-        if (blockIntersectsPlayer(px, py, pz)) return;
+        if (existing != AIR && existing != WATER) return false;
+        if (blockIntersectsPlayer(px, py, pz)) return false;
         setBlock(px, py, pz, item);
+        if (item == CHEST) {
+            // BlockChest#onBlockPlacedBy faces opposite the placing player.
+            setChestFacing(px, py, pz, (yawToFacing(yaw) + 2) & 3);
+        }
         sound.playPlace(item);
         if (gameMode != GAMEMODE_CREATIVE) {
             invCount[selectedSlot]--;
             if (invCount[selectedSlot] <= 0) { invId[selectedSlot] = 0; invCount[selectedSlot] = 0; }
         }
+        return true;
     }
 
     int selectedItemId() { return invId[selectedSlot]; }
@@ -2528,22 +2565,24 @@ public class MinecraftGL {
         int craftSize = usingCraftingTable ? 3 : 2;
         int slot = craft3dgl.ui.InventoryUIRenderer.SLOT_SIZE;
 
-        // Armor (kind=3 idx 0..3)
-        int aX = craft3dgl.ui.InventoryUIRenderer.armorX(width);
-        int aY = craft3dgl.ui.InventoryUIRenderer.armorY(height);
-        int aPitch = craft3dgl.ui.InventoryUIRenderer.armorPitch();
-        for (int i = 0; i < 4; i++) {
-            int sx = aX, sy = aY + i * aPitch;
-            if (inside(mx, my, sx, sy, slot, slot)) return new int[]{3, i};
+        // ContainerWorkbench has no equipment slots; ContainerPlayer has four
+        // armour slots plus offhand at the MCP 9.40 coordinates.
+        if (!usingCraftingTable) {
+            int aX = craft3dgl.ui.InventoryUIRenderer.armorX(width);
+            int aY = craft3dgl.ui.InventoryUIRenderer.armorY(height);
+            int aPitch = craft3dgl.ui.InventoryUIRenderer.armorPitch();
+            for (int i = 0; i < 4; i++) {
+                int sx = aX, sy = aY + i * aPitch;
+                if (inside(mx, my, sx, sy, slot, slot)) return new int[]{3, i};
+            }
+            int oX = craft3dgl.ui.InventoryUIRenderer.offhandX(width);
+            int oY = craft3dgl.ui.InventoryUIRenderer.offhandY(height);
+            if (inside(mx, my, oX, oY, slot, slot)) return new int[]{3, 4};
         }
-        // Offhand (kind=3 idx 4)
-        int oX = craft3dgl.ui.InventoryUIRenderer.offhandX(width);
-        int oY = craft3dgl.ui.InventoryUIRenderer.offhandY(height);
-        if (inside(mx, my, oX, oY, slot, slot)) return new int[]{3, 4};
 
         // Crafting grid (kind=0)
         int cx = craft3dgl.ui.InventoryUIRenderer.craftAreaX(width, craftSize);
-        int cy = craft3dgl.ui.InventoryUIRenderer.craftY(height);
+        int cy = craft3dgl.ui.InventoryUIRenderer.craftY(height, craftSize);
         int cPitch = craft3dgl.ui.InventoryUIRenderer.craftPitch();
         for (int row = 0; row < craftSize; row++) for (int col = 0; col < craftSize; col++) {
             int idx = row * craftSize + col;
@@ -3924,6 +3963,8 @@ public class MinecraftGL {
         if (USE_MODERN_RENDERER) drawModernChunks(false);
         else drawChunks(false);
 
+        // Tile entities are rendered after the opaque block layer in 1.12.
+        drawChests();
         drawDroppedItems3D();
         drawAnimals();
         drawXpOrbs();
@@ -4039,6 +4080,7 @@ public class MinecraftGL {
         int pcx = clampInt((int) x / CHUNK, 0, CHUNKS_X - 1);
         int pcz = clampInt((int) z / CHUNK, 0, CHUNKS_Z - 1);
         int range = 5;
+        enableFixedFunctionLightmap();
         if (leaves) {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -4057,6 +4099,51 @@ public class MinecraftGL {
         }
         glShadeModel(GL_FLAT);
         if (leaves) { glDepthMask(true); glDisable(GL_BLEND); }
+        disableFixedFunctionLightmap();
+    }
+
+    /** EntityRenderer.enableLightmap/disableLightmap from MCP 9.40. */
+    void enableFixedFunctionLightmap() {
+        int lightmap = gameRenderer.getLightmapTexId();
+        if (lightmap <= 0) return;
+        org.lwjgl.opengl.GL20.glUseProgram(0);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE1);
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, lightmap);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        glMatrixMode(GL_TEXTURE);
+        glPushMatrix();
+        glLoadIdentity();
+        // OpenGlHelper light coordinates are in 0..255 units.
+        glScalef(1f / 256f, 1f / 256f, 1f);
+        glMatrixMode(GL_MODELVIEW);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, textureAtlas);
+    }
+
+    void disableFixedFunctionLightmap() {
+        if (gameRenderer.getLightmapTexId() <= 0) return;
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE1);
+        glMatrixMode(GL_TEXTURE);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+        glDisable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, textureAtlas);
+    }
+
+    void setFixedFunctionLightmapCoords(int blockX, int blockY, int blockZ) {
+        int sky = 15;
+        int block = 0;
+        if (lightEngine != null && inWorld(blockX, blockY, blockZ)) {
+            sky = lightEngine.getSky(blockX, blockY, blockZ);
+            block = lightEngine.getBlockLight(blockX, blockY, blockZ);
+        }
+        float lightX = (block + 0.5f) * 16f;
+        float lightY = (sky + 0.5f) * 16f;
+        org.lwjgl.opengl.GL13.glMultiTexCoord2f(org.lwjgl.opengl.GL13.GL_TEXTURE1, lightX, lightY);
     }
 
     void drawClouds() {
@@ -4143,8 +4230,20 @@ public class MinecraftGL {
 
 
     void drawUI() {
+        // GuiIngame/GuiContainer in 1.12 are fixed-function passes. Isolate them
+        // from terrain shaders, lightmap texture unit, entity tint and blend state.
+        glPushAttrib(GL_ALL_ATTRIB_BITS);
+        org.lwjgl.opengl.GL20.glUseProgram(0);
+        craft3dgl.blaze3d.renderer.RenderSystem.setShader(null);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_FOG);
+        glDisable(GL_LIGHTING);
+        glDepthMask(true);
+        glColor4f(1f, 1f, 1f, 1f);
+        glMatrixMode(GL_TEXTURE);
+        glPushMatrix();
+        glLoadIdentity();
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
         glOrtho(0, width, height, 0, -1, 1);
@@ -4171,9 +4270,11 @@ public class MinecraftGL {
             if (villagerTradeOpen) drawVillagerTradeUI();
             drawChatUI();
         }
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_FOG);
+        glMatrixMode(GL_TEXTURE);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
         glColor4f(1,1,1,1);
+        glPopAttrib();
     }
 
     /**
@@ -4645,7 +4746,8 @@ public class MinecraftGL {
         if (id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3) return false;  // CUTOUT
         if (id == WATER) return false;                         // TRANSLUCENT
         if (id == DOOR_BOTTOM || id == DOOR_TOP) return false; // CUTOUT (rysowane inaczej)
-        // Wszystko inne (stone/dirt/grass/wood/planks/sand/farmland/crafting_table/chest itd) = SOLID
+        if (id == CHEST) return false;                          // TileEntityChest model 14/16 wide
+        // Wszystko inne (stone/dirt/grass/wood/planks/sand/farmland/crafting_table itd) = SOLID
         return true;
     }
 
@@ -4690,7 +4792,7 @@ public class MinecraftGL {
                 for (int bz = minZ; bz < maxZ; bz++) {
                     int id = world[bx][by][bz] & 0xff;
                     if (id == AIR) continue;
-                    if (id == DOOR_BOTTOM || id == DOOR_TOP) continue;
+                    if (id == DOOR_BOTTOM || id == DOOR_TOP || id == CHEST) continue;
                     boolean isCross = (id == TALL_GRASS || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3);
                     boolean isLeaves = (id == LEAVES);
                     boolean isWater = (id == WATER);
@@ -5318,11 +5420,15 @@ public class MinecraftGL {
         if (id <= 0 || count <= 0) return;
         if (isBlockItem(id)) drawIcon(id, x, y, s);
         else drawToolIcon(id, x, y, s);
-        if (count > 1) drawCountDots(count, x + s - 14, y + s - 10);
+        if (count > 1) drawCountDots(count, x, y, s);
     }
 
-    void drawCountDots(int count, int x, int y) {
-        drawText(String.valueOf(count), x - 2, y - 4, 0.72f);
+    void drawCountDots(int count, int x, int y, int iconSize) {
+        String text = String.valueOf(count);
+        int pixelScale = Math.max(1, Math.round(iconSize / 16f));
+        int textX = x + 17 * pixelScale - FontRenderer.mcTextWidth(text, pixelScale);
+        int textY = y + 9 * pixelScale;
+        fontRenderer.drawVanillaStackCount(text, textX, textY, pixelScale);
     }
 
     void drawToolIcon(int id, int x, int y, int s) {
@@ -5995,6 +6101,13 @@ public class MinecraftGL {
     double atlasV1() { return TextureAtlas.atlasV1(); }
 
     void drawIcon(int block, int x, int y, int s) {
+        // Every item draw must bind its own texture. Previously a block rendered
+        // after a tool/font/container sampled whichever texture happened to be
+        // left bound, corrupting icons differently in hotbar and inventory.
+        org.lwjgl.opengl.GL20.glUseProgram(0);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, textureAtlas);
         int tile = tileFor(block, 1);
         double u0 = atlasU0(tile);
         double u1 = atlasU1(tile);
@@ -6036,7 +6149,7 @@ public class MinecraftGL {
         for (int bx = minX; bx < maxX; bx++) for (int by = minY; by < maxY; by++) for (int bz = minZ; bz < maxZ; bz++) {
             int id = world[bx][by][bz] & 0xff;
             if (id == AIR) continue;
-            if (id == DOOR_BOTTOM || id == DOOR_TOP) continue;
+            if (id == DOOR_BOTTOM || id == DOOR_TOP || id == CHEST) continue;
             // tall_grass i wheat rysujemy w przebiegu "leaves" (transparent) jako X-cross
             boolean isCross = (id == TALL_GRASS || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3);
             if (isCross) {
@@ -6076,6 +6189,7 @@ public class MinecraftGL {
         double u0 = atlasU0(tile), u1 = atlasU1(tile);
         double v0 = atlasV0(), v1 = atlasV1();
         float light = 0.95f;
+        setFixedFunctionLightmapCoords(bx, by, bz);
         glColor4f(light, light, light, 1f);
         double x0 = bx, x1 = bx + 1, z0 = bz, z1 = bz + 1;
         double y0 = by, y1 = by + 1;
@@ -6106,7 +6220,7 @@ public class MinecraftGL {
         if (id == WATER && other == WATER) return false;
         if (id == WATER) return true;
         if (other == WATER) return true;
-        if (other == DOOR_BOTTOM || other == DOOR_TOP) return true;
+        if (other == DOOR_BOTTOM || other == DOOR_TOP || other == CHEST) return true;
         if (id == LEAVES && other == LEAVES) return false;
         // tall_grass i wheat sa "cross" - inne bloki widoczne za nimi
         if (other == TALL_GRASS || other == WHEAT_0 || other == WHEAT_1 || other == WHEAT_2 || other == WHEAT_3) return true;
@@ -6131,8 +6245,10 @@ public class MinecraftGL {
             case 4: nz = z + 1; break;
             case 5: nz = z - 1; break;
         }
-        float envLight = (lightEngine != null) ? lightEngine.sampleShade(nx, ny, nz, currentDayMult) : 1.0f;
-        float light = dirShade * envLight;
+        // Fixed-function unit 1 supplies dynamic MCP sky/block light. Vertex
+        // colour only carries directional diffuse shading and local AO.
+        setFixedFunctionLightmapCoords(nx, ny, nz);
+        float light = dirShade;
         // AO na krawedziach (bardziej wyraziste - widoczne przy GL_SMOOTH)
         float a = 1.00f, b = 0.82f, c = 0.62f, d = 0.75f;
         switch (dir) {
@@ -6174,8 +6290,8 @@ public class MinecraftGL {
             case 4: nzw = z + 1; break;
             case 5: nzw = z - 1; break;
         }
-        float envLight = (lightEngine != null) ? lightEngine.sampleShade(nxw, nyw, nzw, currentDayMult) : 1.0f;
-        float light = dirShade * envLight;
+        setFixedFunctionLightmapCoords(nxw, nyw, nzw);
+        float light = dirShade;
         glColor4f(0.42f * light, 0.66f * light, 1.0f * light, 0.58f);
         switch (dir) {
             case 0:
@@ -6254,6 +6370,13 @@ public class MinecraftGL {
             removeDoorMeta(bx, by, bz);
         }
         world[bx][by][bz] = (byte) id;
+        // Every chest is a tile entity, including a newly placed empty chest.
+        // Register it immediately so the ModelChest renderer does not depend on
+        // opening the container once before it becomes visible.
+        if (id == CHEST && old != CHEST) {
+            chestIdsAt(bx, by, bz);
+            chestCountsAt(bx, by, bz);
+        }
         // BlockDoor.neighborChanged: po utracie pelnego podloza obie polowki
         // znikaja, a dolna polowka upuszcza dokladnie jeden item drzwi.
         if (id != old) removeUnsupportedDoorAbove(bx, by, bz);
@@ -6471,14 +6594,12 @@ public class MinecraftGL {
         if (escNow && !escWasDown) { closeChest(); return; }
         if (eNow && !eWasDown) { closeChest(); return; }
         boolean shift = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
-        int panelW = 490, panelH = 510;
-        int px = width / 2 - panelW / 2;
-        int py = height / 2 - panelH / 2;
-        int slot = 46;
-        int startX = px + 32;
-        int chestY = py + 70;
-        int invY = py + panelH - 200;
-        int hotY = py + panelH - 56;
+        // Same MCP 9.40 slot coordinates as ChestUIRenderer/ContainerChest.
+        int slot = craft3dgl.ui.ChestUIRenderer.SLOT_PITCH;
+        int startX = craft3dgl.ui.ChestUIRenderer.startX(width);
+        int chestY = craft3dgl.ui.ChestUIRenderer.chestY(height);
+        int invY = craft3dgl.ui.ChestUIRenderer.invY(height);
+        int hotY = craft3dgl.ui.ChestUIRenderer.hotY(height);
         int[] cIds = chestIdsAt(chestOpenX, chestOpenY, chestOpenZ);
         int[] cCnts = chestCountsAt(chestOpenX, chestOpenY, chestOpenZ);
 
@@ -6530,33 +6651,35 @@ public class MinecraftGL {
     }
 
     int chestSlotAt(int mx, int my, int startX, int chestY, int slot, int invY, int hotY) {
+        int size = craft3dgl.ui.ChestUIRenderer.SLOT_SIZE;
         for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
             int sx = startX + col * slot, sy = chestY + row * slot;
-            if (inside(mx, my, sx, sy, 40, 40)) return row * 9 + col;
+            if (inside(mx, my, sx, sy, size, size)) return row * 9 + col;
         }
         for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
             int sx = startX + col * slot, sy = invY + row * slot;
-            if (inside(mx, my, sx, sy, 40, 40)) return 9 + row * 9 + col;
+            if (inside(mx, my, sx, sy, size, size)) return 9 + row * 9 + col;
         }
         for (int col = 0; col < 9; col++) {
             int sx = startX + col * slot;
-            if (inside(mx, my, sx, hotY, 40, 40)) return col;
+            if (inside(mx, my, sx, hotY, size, size)) return col;
         }
         return -1;
     }
 
     int chestSlotKind(int mx, int my, int startX, int chestY, int slot, int invY, int hotY) {
+        int size = craft3dgl.ui.ChestUIRenderer.SLOT_SIZE;
         for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
             int sx = startX + col * slot, sy = chestY + row * slot;
-            if (inside(mx, my, sx, sy, 40, 40)) return 0;
+            if (inside(mx, my, sx, sy, size, size)) return 0;
         }
         for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
             int sx = startX + col * slot, sy = invY + row * slot;
-            if (inside(mx, my, sx, sy, 40, 40)) return 1;
+            if (inside(mx, my, sx, sy, size, size)) return 1;
         }
         for (int col = 0; col < 9; col++) {
             int sx = startX + col * slot;
-            if (inside(mx, my, sx, hotY, 40, 40)) return 2;
+            if (inside(mx, my, sx, hotY, size, size)) return 2;
         }
         return -1;
     }
@@ -6623,6 +6746,19 @@ public class MinecraftGL {
                 width, height, (int)mxA[0], (int)myA[0],
                 cIds, cCnts, invId, invCount, selectedSlot,
                 cursorId, cursorCount);
+    }
+
+    void drawChests() {
+        int openX = (chestOpen || chestLidProgress > 0f) ? chestOpenX : -1;
+        int openY = (chestOpen || chestLidProgress > 0f) ? chestOpenY : -1;
+        int openZ = (chestOpen || chestLidProgress > 0f) ? chestOpenZ : -1;
+        craft3dgl.world.ChestRenderer.drawAll(world, chestIds.keySet(), chestFacings, CHEST,
+                x, z, 5 * CHUNK, openX, openY, openZ, chestLidProgress,
+                lightEngine, currentDayMult);
+        org.lwjgl.opengl.GL20.glUseProgram(0);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, textureAtlas);
+        glColor4f(1f, 1f, 1f, 1f);
     }
 
     void drawDoors() {

@@ -5,108 +5,131 @@ import craft3dgl.items.ItemNames;
 
 import static org.lwjgl.opengl.GL11.*;
 
-/**
- * Renderer GUI skrzyni: 27 slotow skrzyni + 27 slotow plecaka + 9 hotbar.
- */
+/** Minecraft 1.12 GuiChest port for a 27-slot (three-row) chest. */
 public final class ChestUIRenderer {
-
-    public static final int PANEL_W = 490;
-    public static final int PANEL_H = 510;
-    public static final int SLOT_PITCH = 46;
-    public static final int SLOT_SIZE = 40;
+    public static final int SCALE = 3;
+    public static final int ROWS = 3;
+    public static final int PANEL_W = 176 * SCALE;
+    public static final int PANEL_H = (114 + ROWS * 18) * SCALE;
+    public static final int SLOT_PITCH = 18 * SCALE;
+    public static final int SLOT_SIZE = 18 * SCALE;
 
     private ChestUIRenderer() {}
 
     public static int panelX(int screenW) { return screenW / 2 - PANEL_W / 2; }
     public static int panelY(int screenH) { return screenH / 2 - PANEL_H / 2; }
+    public static int startX(int screenW) { return panelX(screenW) + 7 * SCALE; }
+    public static int chestY(int screenH) { return panelY(screenH) + 17 * SCALE; }
+    public static int invY(int screenH) { return panelY(screenH) + 84 * SCALE; }
+    public static int hotY(int screenH) { return panelY(screenH) + 142 * SCALE; }
 
-    /** Pozycje slotow obliczane przez te metody (zsynchronizowane z draw). */
-    public static int startX(int screenW) { return panelX(screenW) + 32; }
-    public static int chestY(int screenH) { return panelY(screenH) + 70; }
-    public static int invY(int screenH) { return panelY(screenH) + PANEL_H - 200; }
-    public static int hotY(int screenH) { return panelY(screenH) + PANEL_H - 56; }
-
-    public static void draw(FontRenderer font, IconDrawer iconDrawer, Translations trans,
-                            int screenW, int screenH, int mx, int my,
-                            int[] chestIds, int[] chestCnts,
-                            int[] invIds, int[] invCnts, int selectedSlot,
+    public static void draw(FontRenderer font, IconDrawer icons, Translations trans,
+                            int screenW, int screenH, int mouseX, int mouseY,
+                            int[] chestIds, int[] chestCounts,
+                            int[] inventoryIds, int[] inventoryCounts, int selectedSlot,
                             int cursorId, int cursorCount) {
-        UIStyle.drawDimBackground(screenW, screenH, 0.45f);
-        int px = panelX(screenW);
-        int py = panelY(screenH);
-        UIStyle.drawPanel(px, py, PANEL_W, PANEL_H);
-        font.drawCenteredTextDark(trans.tr("chest.title"), px + PANEL_W / 2, py + 12, 0.85f);
+        UIStyle.drawDimBackground(screenW, screenH, 0.55f);
+        int panelX = panelX(screenW);
+        int panelY = panelY(screenH);
 
-        int sx0 = startX(screenW);
-        int cY = chestY(screenH);
-        int iY = invY(screenH);
-        int hY = hotY(screenH);
+        // GuiChest uses two regions of generic_54.png. For three rows the upper
+        // region is 71 px tall; the fixed 96 px player inventory starts at v=126.
+        VanillaGuiTextures.drawRegion("generic_54", panelX, panelY,
+                0, 0, 176, ROWS * 18 + 17, SCALE);
+        VanillaGuiTextures.drawRegion("generic_54", panelX,
+                panelY + (ROWS * 18 + 17) * SCALE,
+                0, 126, 176, 96, SCALE);
 
-        // Skrzynia 3x9
-        font.drawTextDark(trans.tr("section.chest"), sx0, cY - 20, 0.60f);
-        for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
-            int idx = row * 9 + col;
-            int sx = sx0 + col * SLOT_PITCH, sy = cY + row * SLOT_PITCH;
-            UIStyle.drawSlotRect(sx, sy, SLOT_SIZE, false);
-            iconDrawer.drawStackIcon(chestIds[idx], chestCnts[idx], sx + 4, sy + 4, 32);
-            UIStyle.drawSlotHover(sx, sy, SLOT_SIZE, mx, my);
-        }
-        // Separator
-        glDisable(GL_TEXTURE_2D);
-        glColor4f(0.40f, 0.38f, 0.36f, 1f);
-        UIStyle.quad(sx0, cY + 3 * SLOT_PITCH + 18, 9 * SLOT_PITCH - 4, 2);
-        glColor4f(0.95f, 0.93f, 0.90f, 1f);
-        UIStyle.quad(sx0, cY + 3 * SLOT_PITCH + 20, 9 * SLOT_PITCH - 4, 1);
-        glEnable(GL_TEXTURE_2D);
-
-        // Backpack 3x9
-        font.drawTextDark(trans.tr("section.inventory"), sx0, iY - 20, 0.60f);
-        for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
-            int idx = 9 + row * 9 + col;
-            int sx = sx0 + col * SLOT_PITCH, sy = iY + row * SLOT_PITCH;
-            UIStyle.drawSlotRect(sx, sy, SLOT_SIZE, false);
-            iconDrawer.drawStackIcon(invIds[idx], invCnts[idx], sx + 4, sy + 4, 32);
-            UIStyle.drawSlotHover(sx, sy, SLOT_SIZE, mx, my);
+        int startX = startX(screenW);
+        int chestY = chestY(screenH);
+        for (int row = 0; row < ROWS; row++) {
+            for (int col = 0; col < 9; col++) {
+                int index = row * 9 + col;
+                int slotX = startX + col * SLOT_PITCH;
+                int slotY = chestY + row * SLOT_PITCH;
+                drawItem(icons, chestIds[index], chestCounts[index], slotX, slotY);
+                drawSlotHover(slotX, slotY, mouseX, mouseY);
+            }
         }
 
-        // Hotbar
-        font.drawTextDark(trans.tr("section.hotbar"), sx0, hY - 20, 0.60f);
+        int inventoryY = invY(screenH);
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 9; col++) {
+                int index = 9 + row * 9 + col;
+                int slotX = startX + col * SLOT_PITCH;
+                int slotY = inventoryY + row * SLOT_PITCH;
+                drawItem(icons, inventoryIds[index], inventoryCounts[index], slotX, slotY);
+                drawSlotHover(slotX, slotY, mouseX, mouseY);
+            }
+        }
+
+        int hotbarY = hotY(screenH);
         for (int col = 0; col < 9; col++) {
-            int sx = sx0 + col * SLOT_PITCH;
-            UIStyle.drawSlotRect(sx, hY, SLOT_SIZE, col == selectedSlot);
-            iconDrawer.drawStackIcon(invIds[col], invCnts[col], sx + 4, hY + 4, 32);
-            UIStyle.drawSlotHover(sx, hY, SLOT_SIZE, mx, my);
+            int slotX = startX + col * SLOT_PITCH;
+            drawItem(icons, inventoryIds[col], inventoryCounts[col], slotX, hotbarY);
+            drawSlotHover(slotX, hotbarY, mouseX, mouseY);
         }
 
-        // Hover tooltip
-        int hoverItem = findHoverItem(mx, my, screenW, screenH, chestIds, invIds);
-        if (hoverItem > 0 && (cursorId == 0 || cursorCount == 0)) {
-            Tooltip.draw(font, ItemNames.itemName(hoverItem, trans.getLanguage()), mx, my, screenW, screenH);
+        font.drawVanillaContainerText(trans.tr("chest.title"),
+                panelX + 8 * SCALE, panelY + 6 * SCALE, SCALE);
+        font.drawVanillaContainerText(trans.tr("section.inventory"),
+                panelX + 8 * SCALE, panelY + (PANEL_H / SCALE - 94) * SCALE, SCALE);
+
+        int hoverItem = findHoverItem(mouseX, mouseY, screenW, screenH, chestIds, inventoryIds);
+        if (hoverItem > 0 && (cursorId <= 0 || cursorCount <= 0)) {
+            Tooltip.draw(font, ItemNames.itemName(hoverItem, trans.getLanguage()),
+                    mouseX, mouseY, screenW, screenH);
         }
         if (cursorId > 0 && cursorCount > 0) {
-            iconDrawer.drawStackIcon(cursorId, cursorCount, mx - 16, my - 16, 32);
+            icons.drawStackIcon(cursorId, cursorCount,
+                    mouseX - 8 * SCALE, mouseY - 8 * SCALE, 16 * SCALE);
         }
+        glColor4f(1f, 1f, 1f, 1f);
     }
 
-    private static int findHoverItem(int mx, int my, int screenW, int screenH,
-                                     int[] chestIds, int[] invIds) {
-        int sx0 = startX(screenW);
-        int cY = chestY(screenH);
-        int iY = invY(screenH);
-        int hY = hotY(screenH);
-        for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
-            int idx = row * 9 + col;
-            int sx = sx0 + col * SLOT_PITCH, sy = cY + row * SLOT_PITCH;
-            if (UIStyle.inside(mx, my, sx, sy, SLOT_SIZE, SLOT_SIZE) && chestIds[idx] > 0) return chestIds[idx];
+    private static void drawItem(IconDrawer icons, int id, int count, int slotX, int slotY) {
+        icons.drawStackIcon(id, count, slotX + SCALE, slotY + SCALE, 16 * SCALE);
+    }
+
+    private static void drawSlotHover(int slotX, int slotY, int mouseX, int mouseY) {
+        if (!UIStyle.inside(mouseX, mouseY, slotX, slotY, SLOT_SIZE, SLOT_SIZE)) return;
+        glDisable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(1f, 1f, 1f, 0.50f);
+        UIStyle.quad(slotX, slotY, SLOT_SIZE, SLOT_SIZE);
+        glDisable(GL_BLEND);
+        glEnable(GL_TEXTURE_2D);
+        glColor4f(1f, 1f, 1f, 1f);
+    }
+
+    private static int findHoverItem(int mouseX, int mouseY, int screenW, int screenH,
+                                     int[] chestIds, int[] inventoryIds) {
+        int startX = startX(screenW);
+        int chestY = chestY(screenH);
+        int inventoryY = invY(screenH);
+        int hotbarY = hotY(screenH);
+        for (int row = 0; row < ROWS; row++) {
+            for (int col = 0; col < 9; col++) {
+                int index = row * 9 + col;
+                if (UIStyle.inside(mouseX, mouseY, startX + col * SLOT_PITCH,
+                        chestY + row * SLOT_PITCH, SLOT_SIZE, SLOT_SIZE) && chestIds[index] > 0) {
+                    return chestIds[index];
+                }
+            }
         }
-        for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
-            int idx = 9 + row * 9 + col;
-            int sx = sx0 + col * SLOT_PITCH, sy = iY + row * SLOT_PITCH;
-            if (UIStyle.inside(mx, my, sx, sy, SLOT_SIZE, SLOT_SIZE) && invIds[idx] > 0) return invIds[idx];
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 9; col++) {
+                int index = 9 + row * 9 + col;
+                if (UIStyle.inside(mouseX, mouseY, startX + col * SLOT_PITCH,
+                        inventoryY + row * SLOT_PITCH, SLOT_SIZE, SLOT_SIZE) && inventoryIds[index] > 0) {
+                    return inventoryIds[index];
+                }
+            }
         }
         for (int col = 0; col < 9; col++) {
-            int sx = sx0 + col * SLOT_PITCH;
-            if (UIStyle.inside(mx, my, sx, hY, SLOT_SIZE, SLOT_SIZE) && invIds[col] > 0) return invIds[col];
+            if (UIStyle.inside(mouseX, mouseY, startX + col * SLOT_PITCH,
+                    hotbarY, SLOT_SIZE, SLOT_SIZE) && inventoryIds[col] > 0) return inventoryIds[col];
         }
         return 0;
     }

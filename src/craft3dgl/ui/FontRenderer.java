@@ -174,6 +174,51 @@ public final class FontRenderer {
         drawTextDark(text, centerX - textWidth(text, scale) / 2, y, scale);
     }
 
+    /**
+     * Vanilla container label: Minecraft's ascii font with no neon glow or custom
+     * drop shadow. GuiInventory/GuiCrafting/GuiChest use colour 4210752 (#404040).
+     */
+    public void drawVanillaContainerText(String text, int x, int y, int pixelScale) {
+        if (text == null || text.isEmpty()) return;
+        if (mcFontTexture == 0) {
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, fontTexture);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0.25f, 0.25f, 0.25f, 1f);
+            drawTextRaw(text, x, y, pixelScale * 0.25f);
+        } else {
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, mcFontTexture);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0.25f, 0.25f, 0.25f, 1f);
+            drawMcTextRaw(text, x, y, pixelScale);
+        }
+        glDisable(GL_BLEND);
+        glColor4f(1f, 1f, 1f, 1f);
+        glBindTexture(GL_TEXTURE_2D, textureAtlasToRestore);
+    }
+
+    /** Vanilla ItemRenderer stack count: white pixel font with one-pixel shadow. */
+    public void drawVanillaStackCount(String text, int x, int y, int pixelScale) {
+        if (text == null || text.isEmpty()) return;
+        if (mcFontTexture == 0) {
+            drawText(text, x, y, pixelScale * 0.25f);
+            return;
+        }
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, mcFontTexture);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.25f, 0.25f, 0.25f, 1f);
+        drawMcTextRaw(text, x + pixelScale, y + pixelScale, pixelScale);
+        glColor4f(1f, 1f, 1f, 1f);
+        drawMcTextRaw(text, x, y, pixelScale);
+        glDisable(GL_BLEND);
+        glBindTexture(GL_TEXTURE_2D, textureAtlasToRestore);
+    }
+
     /** Szerokosc tekstu w MC pixel font. MC glyph = 5px szerokosc + 1px spacing = 6px * pixelScale. */
     public static int mcTextWidth(String text, int pixelScale) {
         if (text == null) return 0;
