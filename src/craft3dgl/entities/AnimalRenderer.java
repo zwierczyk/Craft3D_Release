@@ -1,76 +1,244 @@
 package craft3dgl.entities;
 
 import craft3dgl.AnimalGL;
-import craft3dgl.ui.CuboidHelper;
+import craft3dgl.save.AssetFinder;
 
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.nio.ByteBuffer;
 import java.util.List;
+import javax.imageio.ImageIO;
+import org.lwjgl.BufferUtils;
 
 import static craft3dgl.ui.CuboidHelper.color;
-import static craft3dgl.ui.CuboidHelper.drawCuboid;
 import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
 
 /**
- * Renderer modeli 3D zwierząt: świnia, krowa, owca.
- * Każde zwierzę z piksel-art stylem MC (drobne klocki).
+ * Modele swini, krowy i owcy przeniesione z MCP 9.40:
+ * ModelPig, ModelCow, ModelSheep2 oraz warstwa ModelSheep1.
  */
 public final class AnimalRenderer {
     private AnimalRenderer() {}
 
+    private static final float MODEL_SCALE = 1f / 16f;
+    private static final PigModel PIG_MODEL = new PigModel();
+    private static final CowModel COW_MODEL = new CowModel();
+    private static final SheepModel SHEEP_MODEL = new SheepModel(false);
+    private static final SheepModel SHEEP_WOOL_MODEL = new SheepModel(true);
+
+    private static int pigTexture;
+    private static int cowTexture;
+    private static int sheepTexture;
+    private static int sheepWoolTexture;
+    private static boolean texturesLoaded;
+
     public static void drawAll(List<AnimalGL> animals) {
         if (animals.isEmpty()) return;
-        glDisable(GL_TEXTURE_2D);
-        for (AnimalGL a : animals) {
-            double drawY = a.displayInit ? a.displayY : a.y;
+        glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT | GL_COLOR_BUFFER_BIT | GL_CURRENT_BIT);
+        ensureTexturesLoaded();
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.1f);
+        glDisable(GL_BLEND);
+        // ModelBox ma rozna kolejnosc wierzcholkow po mirror/ujemnej skali.
+        glDisable(GL_CULL_FACE);
+
+        for (AnimalGL animal : animals) {
+            double drawY = animal.displayInit ? animal.displayY : animal.y;
             glPushMatrix();
-            glTranslated(a.x, drawY, a.z);
-            glRotated(Math.toDegrees(a.yaw), 0, 1, 0);
-            if (a.type == AnimalGL.PIG) drawPig();
-            else if (a.type == AnimalGL.COW) drawCow();
-            else if (a.type == AnimalGL.SHEEP) drawSheep();
+            glTranslated(animal.x, drawY, animal.z);
+            // Nasz yaw=0 patrzy na +Z; vanilla model patrzy na -Z.
+            glRotated(180.0 + Math.toDegrees(animal.yaw), 0, 1, 0);
+            // RenderLivingBase.prepareScale z MCP 9.40.
+            glScalef(-1f, -1f, 1f);
+            glTranslatef(0f, -1.501f, 0f);
+
+            if (animal.type == AnimalGL.PIG) {
+                drawModel(PIG_MODEL, animal, pigTexture, 0.96f, 0.53f, 0.62f);
+            } else if (animal.type == AnimalGL.COW) {
+                drawModel(COW_MODEL, animal, cowTexture, 0.36f, 0.22f, 0.13f);
+            } else if (animal.type == AnimalGL.SHEEP) {
+                drawModel(SHEEP_MODEL, animal, sheepTexture, 0.24f, 0.22f, 0.20f);
+                // LayerSheepWool: biala welna jest osobnym, nadmuchanym modelem.
+                drawModel(SHEEP_WOOL_MODEL, animal, sheepWoolTexture, 0.90f, 0.90f, 0.86f);
+            }
             glPopMatrix();
         }
-        glEnable(GL_TEXTURE_2D);
-        glColor3f(1, 1, 1);
+
+        glPopAttrib();
     }
 
-    private static void drawPig() {
-        color(0.96f, 0.53f, 0.62f); drawCuboid(-0.38, 0.20, -0.62, 0.38, 0.70, 0.35);
-        color(1.00f, 0.60f, 0.68f); drawCuboid(-0.30, 0.35, 0.30, 0.30, 0.85, 0.82);
-        color(0.95f, 0.38f, 0.48f); drawCuboid(-0.18, 0.48, 0.78, 0.18, 0.66, 0.92);
-        color(0.02f, 0.02f, 0.02f); drawCuboid(-0.20, 0.66, 0.825, -0.12, 0.74, 0.835);
-        color(0.02f, 0.02f, 0.02f); drawCuboid( 0.12, 0.66, 0.825,  0.20, 0.74, 0.835);
-        color(0.92f, 0.44f, 0.54f); drawCuboid(-0.32, 0.76, 0.42, -0.18, 1.00, 0.60);
-        color(0.92f, 0.44f, 0.54f); drawCuboid( 0.18, 0.76, 0.42,  0.32, 1.00, 0.60);
-        color(0.86f, 0.38f, 0.48f); drawCuboid(-0.32, 0.00, -0.50, -0.16, 0.25, -0.34);
-        color(0.86f, 0.38f, 0.48f); drawCuboid( 0.16, 0.00, -0.50,  0.32, 0.25, -0.34);
-        color(0.86f, 0.38f, 0.48f); drawCuboid(-0.32, 0.00,  0.12, -0.16, 0.25,  0.28);
-        color(0.86f, 0.38f, 0.48f); drawCuboid( 0.16, 0.00,  0.12,  0.32, 0.25,  0.28);
+    private static void drawModel(QuadrupedModel model, AnimalGL animal, int texture,
+                                  float fallbackR, float fallbackG, float fallbackB) {
+        model.setupAnimation(animal);
+        if (texture > 0) {
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            color(1f, 1f, 1f);
+        } else {
+            glDisable(GL_TEXTURE_2D);
+            color(fallbackR, fallbackG, fallbackB);
+        }
+        model.render();
     }
 
-    private static void drawCow() {
-        color(0.36f, 0.22f, 0.13f); drawCuboid(-0.42, 0.22, -0.68, 0.42, 0.86, 0.36);
-        color(0.88f, 0.84f, 0.74f); drawCuboid(-0.22, 0.30, -0.66, 0.18, 0.82, -0.36);
-        color(0.33f, 0.20f, 0.12f); drawCuboid(-0.32, 0.48, 0.30, 0.32, 1.02, 0.86);
-        color(0.72f, 0.56f, 0.42f); drawCuboid(-0.20, 0.56, 0.80, 0.20, 0.74, 0.96);
-        color(0.02f, 0.02f, 0.02f); drawCuboid(-0.22, 0.78, 0.865, -0.14, 0.86, 0.875);
-        color(0.02f, 0.02f, 0.02f); drawCuboid( 0.14, 0.78, 0.865,  0.22, 0.86, 0.875);
-        color(0.85f, 0.82f, 0.66f); drawCuboid(-0.42, 0.92, 0.38, -0.28, 1.12, 0.58);
-        color(0.85f, 0.82f, 0.66f); drawCuboid( 0.28, 0.92, 0.38,  0.42, 1.12, 0.58);
-        color(0.20f, 0.12f, 0.08f); drawCuboid(-0.34, 0.00, -0.54, -0.18, 0.28, -0.38);
-        color(0.20f, 0.12f, 0.08f); drawCuboid( 0.18, 0.00, -0.54,  0.34, 0.28, -0.38);
-        color(0.20f, 0.12f, 0.08f); drawCuboid(-0.34, 0.00,  0.12, -0.18, 0.28,  0.28);
-        color(0.20f, 0.12f, 0.08f); drawCuboid( 0.18, 0.00,  0.12,  0.34, 0.28,  0.28);
+    private static void ensureTexturesLoaded() {
+        if (texturesLoaded) return;
+        texturesLoaded = true;
+        File root = AssetFinder.findAssetDir("entity", AnimalRenderer.class);
+        if (root == null) return;
+        pigTexture = loadTexture(findTexture(root, "pig/pig.png", "pig.png"));
+        cowTexture = loadTexture(findTexture(root, "cow/cow.png", "cow.png"));
+        sheepTexture = loadTexture(findTexture(root, "sheep/sheep.png", "sheep.png"));
+        sheepWoolTexture = loadTexture(findTexture(root, "sheep/sheep_fur.png", "sheep_fur.png"));
+        System.out.println("[Animals] textures pig=" + pigTexture + " cow=" + cowTexture
+                + " sheep=" + sheepTexture + " wool=" + sheepWoolTexture);
     }
 
-    private static void drawSheep() {
-        color(0.92f, 0.92f, 0.86f); drawCuboid(-0.48, 0.24, -0.66, 0.48, 0.88, 0.34);
-        color(0.98f, 0.98f, 0.92f); drawCuboid(-0.55, 0.32, -0.58, 0.55, 0.78, 0.28);
-        color(0.18f, 0.16f, 0.14f); drawCuboid(-0.28, 0.42, 0.25, 0.28, 0.88, 0.78);
-        color(0.02f, 0.02f, 0.02f); drawCuboid(-0.18, 0.70, 0.785, -0.10, 0.78, 0.795);
-        color(0.02f, 0.02f, 0.02f); drawCuboid( 0.10, 0.70, 0.785,  0.18, 0.78, 0.795);
-        color(0.12f, 0.10f, 0.09f); drawCuboid(-0.34, 0.00, -0.50, -0.18, 0.26, -0.34);
-        color(0.12f, 0.10f, 0.09f); drawCuboid( 0.18, 0.00, -0.50,  0.34, 0.26, -0.34);
-        color(0.12f, 0.10f, 0.09f); drawCuboid(-0.34, 0.00,  0.10, -0.18, 0.26,  0.26);
-        color(0.12f, 0.10f, 0.09f); drawCuboid( 0.18, 0.00,  0.10,  0.34, 0.26,  0.26);
+    private static File findTexture(File root, String minecraftPath, String flatName) {
+        File nested = new File(root, minecraftPath);
+        return nested.isFile() ? nested : new File(root, flatName);
+    }
+
+    private static int loadTexture(File file) {
+        if (file == null || !file.isFile()) return 0;
+        try {
+            BufferedImage image = ImageIO.read(file);
+            if (image == null || image.getWidth() != 64 || image.getHeight() != 32) {
+                System.err.println("[Animals] expected 64x32 texture: " + file);
+                return 0;
+            }
+            ByteBuffer pixels = BufferUtils.createByteBuffer(64 * 32 * 4);
+            for (int y = 0; y < 32; y++) {
+                for (int x = 0; x < 64; x++) {
+                    int argb = image.getRGB(x, y);
+                    pixels.put((byte)((argb >> 16) & 255));
+                    pixels.put((byte)((argb >> 8) & 255));
+                    pixels.put((byte)(argb & 255));
+                    pixels.put((byte)((argb >> 24) & 255));
+                }
+            }
+            pixels.flip();
+            int texture = glGenTextures();
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 32, 0,
+                    GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            return texture;
+        } catch (Exception exception) {
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            System.err.println("[Animals] cannot load " + file + ": " + exception);
+            return 0;
+        }
+    }
+
+    private abstract static class QuadrupedModel {
+        ModelPart head;
+        ModelPart body;
+        ModelPart leg1;
+        ModelPart leg2;
+        ModelPart leg3;
+        ModelPart leg4;
+
+        void buildQuadruped(int legHeight, float inflate) {
+            head = part(0, 0).addBox(-4f, -4f, -8f, 8, 8, 8, inflate);
+            head.setPos(0f, 18f - legHeight, -6f);
+            body = part(28, 8).addBox(-5f, -10f, -7f, 10, 16, 8, inflate);
+            body.setPos(0f, 17f - legHeight, 2f);
+            leg1 = part(0, 16).addBox(-2f, 0f, -2f, 4, legHeight, 4, inflate);
+            leg1.setPos(-3f, 24f - legHeight, 7f);
+            leg2 = part(0, 16).addBox(-2f, 0f, -2f, 4, legHeight, 4, inflate);
+            leg2.setPos(3f, 24f - legHeight, 7f);
+            leg3 = part(0, 16).addBox(-2f, 0f, -2f, 4, legHeight, 4, inflate);
+            leg3.setPos(-3f, 24f - legHeight, -5f);
+            leg4 = part(0, 16).addBox(-2f, 0f, -2f, 4, legHeight, 4, inflate);
+            leg4.setPos(3f, 24f - legHeight, -5f);
+        }
+
+        ModelPart part(int u, int v) {
+            return new ModelPart(64, 32, u, v);
+        }
+
+        void setupAnimation(AnimalGL animal) {
+            // ModelQuadruped.setRotationAngles z MCP 9.40.
+            head.xRot = (float)animal.headPitch;
+            head.yRot = (float)animal.headYaw;
+            head.zRot = 0f;
+            body.xRot = (float)Math.PI / 2f;
+            float phase = (float)animal.limbSwing * 0.6662f;
+            float amount = animal.limbSwingAmount;
+            leg1.xRot = (float)Math.cos(phase) * 1.4f * amount;
+            leg2.xRot = (float)Math.cos(phase + Math.PI) * 1.4f * amount;
+            leg3.xRot = (float)Math.cos(phase + Math.PI) * 1.4f * amount;
+            leg4.xRot = (float)Math.cos(phase) * 1.4f * amount;
+        }
+
+        void render() {
+            head.render(MODEL_SCALE);
+            body.render(MODEL_SCALE);
+            leg1.render(MODEL_SCALE);
+            leg2.render(MODEL_SCALE);
+            leg3.render(MODEL_SCALE);
+            leg4.render(MODEL_SCALE);
+        }
+    }
+
+    /** ModelPig(super(6)): dodatkowy box ryja ma UV (16,16). */
+    private static final class PigModel extends QuadrupedModel {
+        PigModel() {
+            buildQuadruped(6, 0f);
+            head.setTextureOffset(16, 16).addBox(-2f, 0f, -9f, 4, 3, 1, 0f);
+        }
+    }
+
+    /** ModelCow: szerszy korpus, rogi i wymie dokladnie jak w MCP 9.40. */
+    private static final class CowModel extends QuadrupedModel {
+        CowModel() {
+            buildQuadruped(12, 0f);
+            head = part(0, 0).addBox(-4f, -4f, -6f, 8, 8, 6, 0f);
+            head.setPos(0f, 4f, -8f);
+            head.setTextureOffset(22, 0).addBox(-5f, -5f, -4f, 1, 3, 1, 0f);
+            head.setTextureOffset(22, 0).addBox(4f, -5f, -4f, 1, 3, 1, 0f);
+            body = part(18, 4).addBox(-6f, -10f, -7f, 12, 18, 10, 0f);
+            body.setPos(0f, 5f, 2f);
+            body.setTextureOffset(52, 0).addBox(-2f, 2f, -8f, 4, 6, 1, 0f);
+            leg1.x -= 1f;
+            leg2.x += 1f;
+            leg3.x -= 1f;
+            leg4.x += 1f;
+            leg3.z -= 1f;
+            leg4.z -= 1f;
+        }
+    }
+
+    /** ModelSheep2 (cialo) albo ModelSheep1 (zewnetrzna warstwa welny). */
+    private static final class SheepModel extends QuadrupedModel {
+        SheepModel(boolean wool) {
+            buildQuadruped(12, 0f);
+            if (!wool) {
+                head = part(0, 0).addBox(-3f, -4f, -6f, 6, 6, 8, 0f);
+                head.setPos(0f, 6f, -8f);
+                body = part(28, 8).addBox(-4f, -10f, -7f, 8, 16, 6, 0f);
+                body.setPos(0f, 5f, 2f);
+            } else {
+                head = part(0, 0).addBox(-3f, -4f, -4f, 6, 6, 6, 0.6f);
+                head.setPos(0f, 6f, -8f);
+                body = part(28, 8).addBox(-4f, -10f, -7f, 8, 16, 6, 1.75f);
+                body.setPos(0f, 5f, 2f);
+                leg1 = part(0, 16).addBox(-2f, 0f, -2f, 4, 6, 4, 0.5f);
+                leg1.setPos(-3f, 12f, 7f);
+                leg2 = part(0, 16).addBox(-2f, 0f, -2f, 4, 6, 4, 0.5f);
+                leg2.setPos(3f, 12f, 7f);
+                leg3 = part(0, 16).addBox(-2f, 0f, -2f, 4, 6, 4, 0.5f);
+                leg3.setPos(-3f, 12f, -5f);
+                leg4 = part(0, 16).addBox(-2f, 0f, -2f, 4, 6, 4, 0.5f);
+                leg4.setPos(3f, 12f, -5f);
+            }
+        }
     }
 }

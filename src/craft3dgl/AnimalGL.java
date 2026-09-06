@@ -13,6 +13,12 @@ public final class AnimalGL {
     public double yaw;
     public double targetYaw;
     public double walkTimer;
+    /** ModelQuadruped animation values, in the same units as MCP limbSwing. */
+    public double limbSwing;
+    public float limbSwingAmount;
+    /** Head angles relative to body, in radians. */
+    public double headYaw;
+    public double headPitch;
     public int health;
     public double age;
     public double displayY;
@@ -32,7 +38,8 @@ public final class AnimalGL {
         this.z = z;
         this.displayY = y;
         this.displayInit = true;
-        this.health = type == COW ? 12 : type == SHEEP ? 8 : 10;
+        // EntityCow/EntityPig/EntitySheep MAX_HEALTH z Minecraft 1.12.
+        this.health = craft3dgl.entities.EntityConstants.animalMaxHealth(type);
         this.yaw = Math.random() * Math.PI * 2;
         this.targetYaw = this.yaw;
         this.walkTimer = Math.random() * 3;

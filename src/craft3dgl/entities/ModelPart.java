@@ -1,44 +1,65 @@
 package craft3dgl.entities;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.lwjgl.opengl.GL11.*;
 
 /**
- * Port MC ModelPart 1:1. Reprezentuje jedna czesc modelu z:
- *  - pozycja (x, y, z) w pixelach skorki
- *  - rotacja (xRot, yRot, zRot) w RADIANACH
- *  - box (offset + rozmiar w pixelach skorki)
- *  - UV origin (u, v) w pixelach tekstury
- *  - mirror flag (dla lewej strony)
- *  - visible flag
- *
- * Renderowanie: uzywa MC-style transform:
- *   translate(x, y, z) * (1/16)
- *   rotate ZYX  (kolejnosc: X, Y, Z w OpenGL czyli glRotate wolane w kolejnosci Z, Y, X)
- *   drawBox()
+ * Lekki port ModelRenderer/ModelBox z Minecraft 1.12 (MCP 9.40).
+ * Pozycje, rozmiary i punkty obrotu sa podawane w pikselach modelu, zas
+ * rotacje w radianach. Jedna czesc moze zawierac wiele boxow z roznymi UV
+ * (np. glowa i ryj swini albo glowa i rogi krowy).
  */
 public class ModelPart {
     public float x, y, z;
     public float xRot, yRot, zRot;
     public boolean mirror = false;
     public boolean visible = true;
-    public int texWidth = 64, texHeight = 32;
+    public final int texWidth, texHeight;
 
-    private int u, v;
-    private float boxX, boxY, boxZ, boxW, boxH, boxD, expand;
-    private boolean hasBox = false;
+    private int textureU, textureV;
+    private final List<Box> boxes = new ArrayList<>();
+
+    private static final class Box {
+        final int u, v;
+        final float x, y, z;
+        final int w, h, d;
+        final float inflate;
+        final boolean mirror;
+
+        Box(int u, int v, float x, float y, float z,
+            int w, int h, int d, float inflate, boolean mirror) {
+            this.u = u;
+            this.v = v;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.w = w;
+            this.h = h;
+            this.d = d;
+            this.inflate = inflate;
+            this.mirror = mirror;
+        }
+    }
 
     public ModelPart(int texWidth, int texHeight, int u, int v) {
         this.texWidth = texWidth;
         this.texHeight = texHeight;
-        this.u = u;
-        this.v = v;
+        this.textureU = u;
+        this.textureV = v;
     }
 
-    public ModelPart addBox(float ox, float oy, float oz, int w, int h, int d, float expand) {
-        this.boxX = ox; this.boxY = oy; this.boxZ = oz;
-        this.boxW = w; this.boxH = h; this.boxD = d;
-        this.expand = expand;
-        this.hasBox = true;
+    /** Odpowiednik ModelRenderer.setTextureOffset. */
+    public ModelPart setTextureOffset(int u, int v) {
+        this.textureU = u;
+        this.textureV = v;
+        return this;
+    }
+
+    /** Odpowiednik ModelRenderer.addBox; nie usuwa wczesniej dodanych boxow. */
+    public ModelPart addBox(float ox, float oy, float oz, int w, int h, int d, float inflate) {
+        boxes.add(new Box(textureU, textureV, ox, oy, oz, w, h, d, inflate, mirror));
         return this;
     }
 
@@ -47,132 +68,93 @@ public class ModelPart {
     }
 
     public void setPos(float x, float y, float z) {
-        this.x = x; this.y = y; this.z = z;
+        this.x = x;
+        this.y = y;
+        this.z = z;
     }
 
-    /**
-     * Copy rotation from other part (uzywane dla hat=head).
-     */
     public void copyFrom(ModelPart other) {
-        this.x = other.x; this.y = other.y; this.z = other.z;
-        this.xRot = other.xRot; this.yRot = other.yRot; this.zRot = other.zRot;
+        this.x = other.x;
+        this.y = other.y;
+        this.z = other.z;
+        this.xRot = other.xRot;
+        this.yRot = other.yRot;
+        this.zRot = other.zRot;
     }
 
-    /**
-     * Render tej czesci. Scale = 0.0625 (1/16) - konwersja pixeli na bloki.
-     */
+    /** Odpowiednik ModelRenderer.render(scale). */
     public void render(float scale) {
-        if (!visible) return;
-        if (!hasBox) return;
-
+        if (!visible || boxes.isEmpty()) return;
         glPushMatrix();
-        // MC ModelRenderer.render() kolejnosc:
-        //   translate(x*scale, y*scale, z*scale)
-        //   if (zRot != 0) rotate(zRot * 180/PI, 0, 0, 1)
-        //   if (yRot != 0) rotate(yRot * 180/PI, 0, 1, 0)
-        //   if (xRot != 0) rotate(xRot * 180/PI, 1, 0, 0)
-        glTranslatef(x * scale, y * scale, z * scale);
-        if (zRot != 0) glRotatef((float)Math.toDegrees(zRot), 0, 0, 1);
-        if (yRot != 0) glRotatef((float)Math.toDegrees(yRot), 0, 1, 0);
-        if (xRot != 0) glRotatef((float)Math.toDegrees(xRot), 1, 0, 0);
-
-        drawBox(scale);
+        translateTo(scale);
+        for (Box box : boxes) drawBox(box, scale);
         glPopMatrix();
     }
 
-    /** Translate to this part's position (dla ItemInHandLayer.translateToHand). */
+    /** Odpowiednik ModelRenderer.postRender/translateAndRotate. */
     public void translateTo(float scale) {
-        // MC: translateAndRotate w ModelRenderer
         glTranslatef(x * scale, y * scale, z * scale);
         if (zRot != 0) glRotatef((float)Math.toDegrees(zRot), 0, 0, 1);
         if (yRot != 0) glRotatef((float)Math.toDegrees(yRot), 0, 1, 0);
         if (xRot != 0) glRotatef((float)Math.toDegrees(xRot), 1, 0, 0);
     }
 
-    /** MC ModelBox rendering. Box od (boxX, boxY, boxZ) o rozmiarze (w,h,d) pixeli. */
-    private void drawBox(float scale) {
-        float e = expand;
-        // WAZNE: MC ma Y+ w dol wewnatrz modelu. Ale to jest juz uwzglednione
-        // przez LivingEntityRenderer.setupScale() ktory robi glScalef(-1, -1, 1).
-        // Wiec tutaj rysujemy w NATYWNYM MC-space: Y+ w dol, X+ w prawo, Z+ do przodu (twarz).
-        float x0 = (boxX - e) * scale;
-        float y0 = (boxY - e) * scale;
-        float z0 = (boxZ - e) * scale;
-        float x1 = (boxX + boxW + e) * scale;
-        float y1 = (boxY + boxH + e) * scale;
-        float z1 = (boxZ + boxD + e) * scale;
+    /** Dokladny uklad wierzcholkow i UV konstruktora ModelBox z MCP 9.40. */
+    private void drawBox(Box box, float scale) {
+        float x0 = box.x - box.inflate;
+        float y0 = box.y - box.inflate;
+        float z0 = box.z - box.inflate;
+        float x1 = box.x + box.w + box.inflate;
+        float y1 = box.y + box.h + box.inflate;
+        float z1 = box.z + box.d + box.inflate;
+        if (box.mirror) {
+            float swap = x1;
+            x1 = x0;
+            x0 = swap;
+        }
 
-        int w = (int) boxW;
-        int h = (int) boxH;
-        int d = (int) boxD;
+        float[] p0 = point(x0, y0, z0, scale);
+        float[] p1 = point(x1, y0, z0, scale);
+        float[] p2 = point(x1, y1, z0, scale);
+        float[] p3 = point(x0, y1, z0, scale);
+        float[] p4 = point(x0, y0, z1, scale);
+        float[] p5 = point(x1, y0, z1, scale);
+        float[] p6 = point(x1, y1, z1, scale);
+        float[] p7 = point(x0, y1, z1, scale);
 
-        // UV layout MC:
-        //   TOP:    (u+d, v)         w x d
-        //   BOTTOM: (u+d+w, v)       w x d
-        //   RIGHT:  (u, v+d)         d x h    (west, -X face)
-        //   FRONT:  (u+d, v+d)       w x h    (north, +Z face w MC = twarz)
-        //   LEFT:   (u+d+w, v+d)     d x h    (east, +X face)
-        //   BACK:   (u+d+w+d, v+d)   w x h    (south, -Z face)
-
-        float T_u = 1f / texWidth;
-        float T_v = 1f / texHeight;
-
-        int uTop   = u + d,       vTop = v;
-        int uBot   = u + d + w,   vBot = v;
-        int uRight = u,           vSide = v + d;
-        int uFront = u + d;
-        int uLeft  = u + d + w;
-        int uBack  = u + d + w + d;
-
-        // TOP - Y-, patrzac od +Y w dol
-        uvQuad(uTop, vTop, w, d, T_u, T_v, mirror,
-               x0, y0, z1,  x1, y0, z1,  x1, y0, z0,  x0, y0, z0);
-        // BOTTOM - Y+, patrzac od -Y w gore (UV odbite w Y)
-        uvQuadFlipV(uBot, vBot, w, d, T_u, T_v, mirror,
-               x0, y1, z0,  x1, y1, z0,  x1, y1, z1,  x0, y1, z1);
-        // FRONT (+Z) - twarz Steve'a
-        uvQuad(uFront, vSide, w, h, T_u, T_v, mirror,
-               x0, y0, z1,  x1, y0, z1,  x1, y1, z1,  x0, y1, z1);
-        // BACK (-Z)
-        uvQuad(uBack, vSide, w, h, T_u, T_v, mirror,
-               x1, y0, z0,  x0, y0, z0,  x0, y1, z0,  x1, y1, z0);
-        // RIGHT (-X = na lewo Steve'a naszego)
-        uvQuad(mirror ? uLeft : uRight, vSide, d, h, T_u, T_v, false,
-               x0, y0, z0,  x0, y0, z1,  x0, y1, z1,  x0, y1, z0);
-        // LEFT (+X = na prawo Steve'a naszego)
-        uvQuad(mirror ? uRight : uLeft, vSide, d, h, T_u, T_v, false,
-               x1, y0, z1,  x1, y0, z0,  x1, y1, z0,  x1, y1, z1);
+        int u = box.u, v = box.v;
+        int w = box.w, h = box.h, d = box.d;
+        // Kolejnosc odpowiada ModelBox.quadList[0..5].
+        mcQuad(u + d + w, v + d, u + d + w + d, v + d + h, p5, p1, p2, p6);
+        mcQuad(u,         v + d, u + d,         v + d + h, p0, p4, p7, p3);
+        mcQuad(u + d,     v,     u + d + w,     v + d,     p5, p4, p0, p1);
+        mcQuad(u + d + w, v + d, u + d + w + w, v,         p2, p3, p7, p6);
+        mcQuad(u + d,     v + d, u + d + w,     v + d + h, p1, p0, p3, p2);
+        mcQuad(u + d + w + d, v + d, u + d + w + d + w, v + d + h,
+                p4, p5, p6, p7);
     }
 
-    private static void uvQuad(int u, int v, int tw, int th, float Tu, float Tv, boolean flipU,
-                               float x1, float y1, float z1,
-                               float x2, float y2, float z2,
-                               float x3, float y3, float z3,
-                               float x4, float y4, float z4) {
-        float u0 = u * Tu, u1 = (u + tw) * Tu;
-        float v0 = v * Tv, v1 = (v + th) * Tv;
-        if (flipU) { float t = u0; u0 = u1; u1 = t; }
+    private static float[] point(float x, float y, float z, float scale) {
+        return new float[]{x * scale, y * scale, z * scale};
+    }
+
+    /** TexturedQuad: p0=(u2,v1), p1=(u1,v1), p2=(u1,v2), p3=(u2,v2). */
+    private void mcQuad(int u1, int v1, int u2, int v2,
+                        float[] p0, float[] p1, float[] p2, float[] p3) {
+        float fu1 = u1 / (float)texWidth;
+        float fv1 = v1 / (float)texHeight;
+        float fu2 = u2 / (float)texWidth;
+        float fv2 = v2 / (float)texHeight;
         glBegin(GL_QUADS);
-        glTexCoord2f(u0, v0); glVertex3f(x1, y1, z1);
-        glTexCoord2f(u1, v0); glVertex3f(x2, y2, z2);
-        glTexCoord2f(u1, v1); glVertex3f(x3, y3, z3);
-        glTexCoord2f(u0, v1); glVertex3f(x4, y4, z4);
+        vertex(p0, fu2, fv1);
+        vertex(p1, fu1, fv1);
+        vertex(p2, fu1, fv2);
+        vertex(p3, fu2, fv2);
         glEnd();
     }
 
-    private static void uvQuadFlipV(int u, int v, int tw, int th, float Tu, float Tv, boolean flipU,
-                                    float x1, float y1, float z1,
-                                    float x2, float y2, float z2,
-                                    float x3, float y3, float z3,
-                                    float x4, float y4, float z4) {
-        float u0 = u * Tu, u1 = (u + tw) * Tu;
-        float v0 = v * Tv, v1 = (v + th) * Tv;
-        if (flipU) { float t = u0; u0 = u1; u1 = t; }
-        glBegin(GL_QUADS);
-        glTexCoord2f(u0, v1); glVertex3f(x1, y1, z1);
-        glTexCoord2f(u1, v1); glVertex3f(x2, y2, z2);
-        glTexCoord2f(u1, v0); glVertex3f(x3, y3, z3);
-        glTexCoord2f(u0, v0); glVertex3f(x4, y4, z4);
-        glEnd();
+    private static void vertex(float[] p, float u, float v) {
+        glTexCoord2f(u, v);
+        glVertex3f(p[0], p[1], p[2]);
     }
 }

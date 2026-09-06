@@ -1406,7 +1406,8 @@ public class MinecraftGL {
                         AnimalGL a = new AnimalGL(type, in.readDouble(), in.readDouble(), in.readDouble());
                         a.yaw = in.readDouble();
                         a.targetYaw = a.yaw;
-                        a.health = in.readInt();
+                        a.health = Math.min(in.readInt(),
+                                craft3dgl.entities.EntityConstants.animalMaxHealth(type));
                         unstickAnimal(a);
                         a.displayY = a.y;
                         a.displayInit = true;
@@ -2078,7 +2079,8 @@ public class MinecraftGL {
         }
 
         Hit hit = castRay(blockReach());
-        AnimalGL targetAnimal = findTargetAnimal(entityReach());
+        double animalReach = hit.hit ? Math.min(entityReach(), hit.dist) : entityReach();
+        AnimalGL targetAnimal = findTargetAnimal(animalReach);
         VillagerGL targetVillager = findTargetVillager(entityReach());
 
         if (left && targetVillager != null && !leftWasDown) {
@@ -3156,6 +3158,8 @@ public class MinecraftGL {
 
     void updateAnimals(double dt) {
         for (AnimalGL a : animals) {
+            double previousX = a.x;
+            double previousZ = a.z;
             a.age += dt;
             boolean inWater = animalInWater(a);
             boolean panicking = a.panicTimer > 0;
@@ -3175,7 +3179,7 @@ public class MinecraftGL {
                     a.panicDirX = ddx * cs - ddz * sn;
                     a.panicDirZ = ddx * sn + ddz * cs;
                 }
-                double panicSpeed = a.type == AnimalGL.SHEEP ? 6.6 : a.type == AnimalGL.COW ? 6.0 : 7.2;
+                double panicSpeed = craft3dgl.entities.EntityConstants.animalPanicSpeed(a.type);
                 if (inWater) panicSpeed *= 0.50;
                 a.vx = a.panicDirX * panicSpeed;
                 a.vz = a.panicDirZ * panicSpeed;
@@ -3190,7 +3194,7 @@ public class MinecraftGL {
                         a.vz = 0;
                     } else {
                         double ty = random.nextDouble() * Math.PI * 2.0;
-                        double sp = a.type == AnimalGL.SHEEP ? 0.55 : a.type == AnimalGL.COW ? 0.50 : 0.60;
+                        double sp = craft3dgl.entities.EntityConstants.animalSpeed(a.type);
                         if (inWater) sp *= 0.50;
                         a.vx = Math.sin(ty) * sp;
                         a.vz = Math.cos(ty) * sp;
@@ -3210,13 +3214,13 @@ public class MinecraftGL {
 
             double nx = a.x + a.vx * dt;
             double nz = a.z + a.vz * dt;
-            boolean blockedX = !animalFreeAt(nx, a.y, a.z);
-            boolean blockedZ = !animalFreeAt(a.x, a.y, nz);
+            boolean blockedX = !animalFreeAt(a, nx, a.y, a.z);
+            boolean blockedZ = !animalFreeAt(a, a.x, a.y, nz);
 
             if (a.onGround && (blockedX || blockedZ)) {
                 double tryX = blockedX ? nx : a.x;
                 double tryZ = blockedZ ? nz : a.z;
-                if (animalFreeAt(tryX, a.y + 1.0, tryZ)) {
+                if (animalFreeAt(a, tryX, a.y + 1.0, tryZ)) {
                     a.vy = 7.0;
                     a.onGround = false;
                 }
@@ -3238,7 +3242,7 @@ public class MinecraftGL {
                     double dx2 = Math.sin(ang), dz2 = Math.cos(ang);
                     double tx = a.x + dx2 * 0.55;
                     double tz = a.z + dz2 * 0.55;
-                    if (!animalFreeAt(tx, a.y, tz)) continue;
+                    if (!animalFreeAt(a, tx, a.y, tz)) continue;
                     double score = dx2 * awayX + dz2 * awayZ;
                     if (score > bestScore) { bestScore = score; bestX = dx2; bestZ = dz2; }
                 }
@@ -3252,7 +3256,7 @@ public class MinecraftGL {
 
             double ny = a.y + a.vy * dt;
             if (a.vy <= 0) {
-                double floorY = findFloorBelow(a.x, a.y, a.z);
+                double floorY = findAnimalFloorBelow(a, a.y);
                 if (floorY >= 0 && ny <= floorY + 1e-6) {
                     a.y = floorY;
                     a.vy = 0;
@@ -3265,7 +3269,7 @@ public class MinecraftGL {
                     a.onGround = false;
                 }
             } else {
-                if (animalFreeAt(a.x, ny, a.z)) {
+                if (animalFreeAt(a, a.x, ny, a.z)) {
                     a.y = ny;
                     a.onGround = false;
                 } else {
@@ -3274,7 +3278,7 @@ public class MinecraftGL {
             }
 
             if (a.onGround) {
-                double floorCheck = findFloorBelow(a.x, a.y, a.z);
+                double floorCheck = findAnimalFloorBelow(a, a.y);
                 if (floorCheck < 0 || Math.abs(a.y - floorCheck) > 0.05) {
                     a.onGround = false;
                 }
@@ -3290,26 +3294,66 @@ public class MinecraftGL {
                 if (sy > 0) { a.y = sy; a.displayY = sy; a.vy = 0; a.onGround = true; }
             }
             smoothAnimalVisual(a, dt);
+            updateAnimalModelAnimation(a, previousX, previousZ, dt);
         }
     }
 
+    /**
+     * EntityLivingBase limbSwing + EntityAIWatchClosest (zasieg 6 blokow),
+     * przeliczone na niezalezny od FPS krok czasu.
+     */
+    void updateAnimalModelAnimation(AnimalGL animal, double previousX, double previousZ, double dt) {
+        double movedX = animal.x - previousX;
+        double movedZ = animal.z - previousZ;
+        double speed = Math.sqrt(movedX * movedX + movedZ * movedZ) / Math.max(0.0001, dt);
+        float targetAmount = (float)Math.min(1.0, speed * 0.2);
+        float blend = (float)(1.0 - Math.pow(0.6, dt * 20.0));
+        animal.limbSwingAmount += (targetAmount - animal.limbSwingAmount) * blend;
+        animal.limbSwing += animal.limbSwingAmount * dt * 20.0;
+
+        double toPlayerX = x - animal.x;
+        double toPlayerZ = z - animal.z;
+        double horizontal = Math.sqrt(toPlayerX * toPlayerX + toPlayerZ * toPlayerZ);
+        double targetHeadYaw = 0.0;
+        double targetHeadPitch = 0.0;
+        if (horizontal <= 6.0) {
+            double lookYaw = Math.atan2(toPlayerX, toPlayerZ);
+            targetHeadYaw = -Math.atan2(Math.sin(lookYaw - animal.yaw),
+                    Math.cos(lookYaw - animal.yaw));
+            targetHeadYaw = clamp(targetHeadYaw, -Math.PI / 3.0, Math.PI / 3.0);
+            double animalEye = animal.y + craft3dgl.entities.EntityConstants.animalEyeHeight(animal.type);
+            double playerEye = y + eyeHeight();
+            targetHeadPitch = -Math.atan2(playerEye - animalEye, Math.max(0.001, horizontal));
+            targetHeadPitch = clamp(targetHeadPitch, -Math.PI / 4.0, Math.PI / 4.0);
+        }
+        animal.headYaw = craft3dgl.entities.EntityCollision.smoothYaw(
+                animal.headYaw, targetHeadYaw, Math.min(1.0, dt * 7.0));
+        animal.headPitch += (targetHeadPitch - animal.headPitch) * Math.min(1.0, dt * 7.0);
+    }
+
     boolean animalInWater(AnimalGL a) {
-        return craft3dgl.entities.EntityCollision.inWater(a.x, a.y, a.z, 0.40, 1.10, entitySolidCheck);
+        return craft3dgl.entities.EntityCollision.inWater(a.x, a.y, a.z,
+                craft3dgl.entities.EntityConstants.ANIMAL_RADIUS,
+                craft3dgl.entities.EntityConstants.animalHeight(a.type), entitySolidCheck);
     }
 
-    boolean animalFreeAt(double ax, double ay, double az) {
-        return craft3dgl.entities.EntityCollision.isFreeAt(ax, ay, az, 0.40, 1.30, entitySolidCheck, WORLD_X, WORLD_Y, WORLD_Z);
+    boolean animalFreeAt(AnimalGL animal, double ax, double ay, double az) {
+        return craft3dgl.entities.EntityCollision.isFreeAt(ax, ay, az,
+                craft3dgl.entities.EntityConstants.ANIMAL_RADIUS,
+                craft3dgl.entities.EntityConstants.animalHeight(animal.type),
+                entitySolidCheck, WORLD_X, WORLD_Y, WORLD_Z);
     }
 
-    double findFloorBelow(double ax, double startY, double az) {
-        return craft3dgl.entities.EntityCollision.findFloorBelow(ax, startY, az, 0.40, entitySolidCheck);
+    double findAnimalFloorBelow(AnimalGL animal, double startY) {
+        return craft3dgl.entities.EntityCollision.findFloorBelow(animal.x, startY, animal.z,
+                craft3dgl.entities.EntityConstants.ANIMAL_RADIUS, entitySolidCheck);
     }
 
     void unstickAnimal(AnimalGL a) {
-        if (animalFreeAt(a.x, a.y, a.z)) return;
+        if (animalFreeAt(a, a.x, a.y, a.z)) return;
         for (int i = 1; i <= 32; i++) {
             double ny = Math.floor(a.y) + i;
-            if (animalFreeAt(a.x, ny, a.z)) {
+            if (animalFreeAt(a, a.x, ny, a.z)) {
                 a.y = ny;
                 a.displayY = ny;
                 a.vy = 0;
@@ -3323,7 +3367,7 @@ public class MinecraftGL {
                 double tx = a.x + dx, tz = a.z + dz;
                 for (int i = 0; i <= 32; i++) {
                     double ny = Math.floor(a.y) + i;
-                    if (animalFreeAt(tx, ny, tz)) {
+                    if (animalFreeAt(a, tx, ny, tz)) {
                         a.x = tx; a.z = tz; a.y = ny;
                         a.displayY = ny; a.vy = 0; a.onGround = true;
                         return;
@@ -3349,16 +3393,31 @@ public class MinecraftGL {
         double ox = x, oy = y + eyeHeight(), oz = z;
         AnimalGL best = null;
         double bestT = maxDist;
-        for (AnimalGL a : animals) {
-            double cx = a.x, cy = a.y + 0.45, cz = a.z;
-            double vx = cx - ox, vy = cy - oy, vz = cz - oz;
-            double t = vx * dx + vy * dy + vz * dz;
-            if (t < 0 || t > bestT) continue;
-            double px = ox + dx * t, py = oy + dy * t, pz = oz + dz * t;
-            double dist = Math.sqrt((cx - px)*(cx - px) + (cy - py)*(cy - py) + (cz - pz)*(cz - pz));
-            if (dist < 0.65) { best = a; bestT = t; }
+        for (AnimalGL animal : animals) {
+            double radius = craft3dgl.entities.EntityConstants.ANIMAL_RADIUS;
+            double height = craft3dgl.entities.EntityConstants.animalHeight(animal.type);
+            double[] interval = {0.0, bestT};
+            if (!clipRayAxis(ox, dx, animal.x - radius, animal.x + radius, interval)) continue;
+            if (!clipRayAxis(oy, dy, animal.y, animal.y + height, interval)) continue;
+            if (!clipRayAxis(oz, dz, animal.z - radius, animal.z + radius, interval)) continue;
+            if (interval[0] <= bestT) {
+                best = animal;
+                bestT = interval[0];
+            }
         }
         return best;
+    }
+
+    /** Slab test jednej osi dla ray kontra AABB. */
+    static boolean clipRayAxis(double origin, double direction, double min, double max,
+                               double[] interval) {
+        if (Math.abs(direction) < 1.0e-9) return origin >= min && origin <= max;
+        double t0 = (min - origin) / direction;
+        double t1 = (max - origin) / direction;
+        if (t0 > t1) { double swap = t0; t0 = t1; t1 = swap; }
+        interval[0] = Math.max(interval[0], t0);
+        interval[1] = Math.min(interval[1], t1);
+        return interval[1] >= interval[0];
     }
 
     void attackAnimal(AnimalGL a) {
