@@ -5336,7 +5336,15 @@ public class MinecraftGL {
         glMatrixMode(GL_MODELVIEW);
         glPushMatrix();
         glLoadIdentity();
+        // Overlay reki korzysta z fixed-function OpenGL 2.1, nie z shadera chunkow.
+        org.lwjgl.opengl.GL20.glUseProgram(0);
+        craft3dgl.blaze3d.renderer.RenderSystem.setShader(null);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+        glDisable(GL_CULL_FACE);
         glDisable(GL_FOG);
+        // Czyszczenie depth jest respektowane tylko przy wlaczonym zapisie depth.
+        glDepthMask(true);
+        glClearDepth(1.0);
         glClear(GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);

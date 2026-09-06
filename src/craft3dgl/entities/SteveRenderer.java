@@ -390,6 +390,9 @@ public final class SteveRenderer {
         ensureLoaded();
         if (texSteve <= 0) return;
         glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
+        // ItemRenderer/RenderPlayer w MCP 9.40 wylacza culling dla reki.
+        glDisable(GL_CULL_FACE);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
         glEnable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -424,6 +427,9 @@ public final class SteveRenderer {
         float arm = (float)Math.sin(root * Math.PI);
 
         glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
+        // ItemRenderer.renderArmFirstPerson robi to przed RenderPlayer.renderRightArm.
+        glDisable(GL_CULL_FACE);
+        org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
         glEnable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
