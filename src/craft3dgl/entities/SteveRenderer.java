@@ -408,8 +408,8 @@ public final class SteveRenderer {
     }
 
     /**
-     * First-person right arm ported from PlayerModel.rightArm and
-     * ItemInHandRenderer.renderPlayerArm (Minecraft 1.14.4 coordinate order).
+     * Prawa reka pierwszoosobowa z ItemRenderer.renderArmFirstPerson
+     * i RenderPlayer.renderRightArm, Minecraft 1.12 / MCP 9.40.
      */
     public static void drawMinecraftFirstPersonArm(float attackProgress, float equipProgress) {
         ensureLoaded();
@@ -442,10 +442,8 @@ public final class SteveRenderer {
         glRotatef(200f, 1, 0, 0);
         glRotatef(-135f, 0, 1, 0);
         glTranslatef(5.6f, 0, 0);
-        // Conversion from the vanilla ModelPart scale to Craft3D's first-person projection.
-        // Keep the vanilla axis order; only scale and offset the complete ModelPart once.
-        glTranslatef(-0.16f, -0.26f, 0.0f);
-        glScalef(1.35f, 1.35f, 1.35f);
+        // RenderPlayer.renderRightArm: pivot i box sa juz przeliczone przez 1/16.
+        // Nie dodajemy drugiego offsetu ani skali — wczesniej spychaly reke poza ekran.
         // PlayerModel rightArm: setPos(-5,2,0), addBox(-3,-2,-2, 4,12,4), render(1/16).
         glTranslatef(-5f / 16f, 2f / 16f, 0);
         drawBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f, 4, 12, 4, false);

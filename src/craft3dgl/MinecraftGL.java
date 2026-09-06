@@ -5368,7 +5368,16 @@ public class MinecraftGL {
         boolean spriteItem = (held == ITEM_EMERALD || held == ITEM_WHEAT || held == ITEM_SEEDS || foodItem);
         boolean toolItem = held > 0 && toolCategory(held) > 0;
 
-        // Direct port of ItemInHandRenderer.applyEatTransform from the supplied MC code.
+        if (held == 0 && craft3dgl.entities.SteveRenderer.isLoaded()) {
+            // ItemRenderer.renderArmFirstPerson: pusty main hand, equipProgress=0.
+            // Transformacja jest kompletna, wiec nie wolno dodawac baseX/baseY/baseZ drugi raz.
+            float swingProgress = swingTimer > 0 ? (float)(1.0 - swingTimer) : 0f;
+            craft3dgl.entities.SteveRenderer.drawMinecraftFirstPersonArm(swingProgress, 0f);
+            finishHandOverlay();
+            return;
+        }
+
+        // Direct port of ItemRenderer.transformEatFirstPerson z MCP 9.40.
         // Craft3D use is 0..1 over 32 ticks, so remaining ticks are 32*(1-use).
         boolean eating = eatingItemId == held && eatingProgress > 0;
         if (eating) {
@@ -5527,6 +5536,10 @@ public class MinecraftGL {
             drawHandArmModel();
         }
 
+        finishHandOverlay();
+    }
+
+    void finishHandOverlay() {
         glPopMatrix();
         glMatrixMode(GL_PROJECTION);
         glPopMatrix();
@@ -5539,8 +5552,8 @@ public class MinecraftGL {
 
     void drawHandArmModel() {
         if (craft3dgl.entities.SteveRenderer.isLoaded()) {
-            float swp = swingTimer > 0 ? (float)(1.0 - swingTimer) : 0f;
-            craft3dgl.entities.SteveRenderer.drawMinecraftFirstPersonArm(swp, 1f);
+            // Wywolujacy ustawil juz transformacje przedmiotu/reki.
+            craft3dgl.entities.SteveRenderer.drawMinecraftFirstPersonArm();
         } else {
             craft3dgl.entities.PlayerRenderer.drawHandArmModel();
         }
