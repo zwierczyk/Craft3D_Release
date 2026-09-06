@@ -189,19 +189,28 @@ public final class BlockBreakRenderer {
         drawBlockOutline(dx0, dy0, dz0, dx1, dy1, dz1, r, g, b, 3);
         if (isMining) {
             int stage = Math.min(9, (int)(progress * 10));
+            boolean panelAlongX = (dx1 - dx0) > (dz1 - dz0);
             glLineWidth(1.5f + stage * 0.35f);
             glColor4f(0.0f, 0.0f, 0.0f, 0.35f + stage * 0.06f);
             glBegin(GL_LINES);
             for (double[] line : getCrackPattern(stage)) {
-                // Rysuj pekniecia na frontowej ścianie panelu drzwi
                 double a1 = line[0], b1 = line[1];
                 double a2 = line[2], b2 = line[3];
-                double sx1 = dx0 + a1 * (dx1 - dx0);
-                double sx2 = dx0 + a2 * (dx1 - dx0);
                 double sy1 = dy0 + b1 * (dy1 - dy0);
                 double sy2 = dy0 + b2 * (dy1 - dy0);
-                glVertex3d(sx1, sy1, dz1);
-                glVertex3d(sx2, sy2, dz1);
+                if (panelAlongX) {
+                    double sx1 = dx0 + a1 * (dx1 - dx0);
+                    double sx2 = dx0 + a2 * (dx1 - dx0);
+                    double faceZ = h.nz < 0 ? dz0 : dz1;
+                    glVertex3d(sx1, sy1, faceZ);
+                    glVertex3d(sx2, sy2, faceZ);
+                } else {
+                    double sz1 = dz0 + a1 * (dz1 - dz0);
+                    double sz2 = dz0 + a2 * (dz1 - dz0);
+                    double faceX = h.nx < 0 ? dx0 : dx1;
+                    glVertex3d(faceX, sy1, sz1);
+                    glVertex3d(faceX, sy2, sz2);
+                }
             }
             glEnd();
         }

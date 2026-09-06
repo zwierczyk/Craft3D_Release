@@ -16,6 +16,8 @@ public final class MiningMechanics {
         if (block == TALL_GRASS) return 0.05;
         if (block == WHEAT_0 || block == WHEAT_1 || block == WHEAT_2 || block == WHEAT_3) return 0.10;
         if (block == DIRT || block == GRASS || block == SAND || block == FARMLAND) return 0.55;
+        // BlockDoor(Material.WOOD) w Minecraft 1.12 ma hardness 3.0F.
+        if (block == DOOR_BOTTOM || block == DOOR_TOP) return 3.0;
         if (block == WOOD || block == PLANKS || block == CRAFTING_TABLE) return 1.0;
         return 1.8;
     }

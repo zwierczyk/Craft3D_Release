@@ -275,7 +275,8 @@ public final class CraftingSystemGL {
         if (!onlyTheseInBounds(id, b, size, used)) return EMPTY;
         int[] consume = new int[9];
         for (int u : used) consume[u] = 1;
-        return new Recipe(MinecraftGL.DOOR_BOTTOM, 1, consume);
+        // Minecraft 1.12: szesc desek daje trzy debowe drzwi.
+        return new Recipe(MinecraftGL.DOOR_BOTTOM, 3, consume);
     }
 
     private static boolean isMatPickaxeAxe(int mat) {

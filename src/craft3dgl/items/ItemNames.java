@@ -20,7 +20,7 @@ public final class ItemNames {
             case SAND: return en ? "Sand" : "Piasek";
             case PLANKS: return en ? "Planks" : "Deski";
             case CRAFTING_TABLE: return en ? "Crafting Table" : "Stol craftingowy";
-            case DOOR_BOTTOM: case DOOR_TOP: return en ? "Door" : "Drzwi";
+            case DOOR_BOTTOM: case DOOR_TOP: return en ? "Oak Door" : "Debowe drzwi";
             case CHEST: return en ? "Chest" : "Skrzynka";
             case WATER: return en ? "Water" : "Woda";
             case ITEM_STICK: return en ? "Sticks" : "Patyki";
@@ -61,7 +61,7 @@ public final class ItemNames {
             case "sand": return SAND;
             case "planks": return PLANKS;
             case "crafting_table": case "table": return CRAFTING_TABLE;
-            case "door": return DOOR_BOTTOM;
+            case "door": case "oak_door": case "wooden_door": case "drzwi": return DOOR_BOTTOM;
             case "chest": return CHEST;
             case "water": return WATER;
             case "stick": return ITEM_STICK;

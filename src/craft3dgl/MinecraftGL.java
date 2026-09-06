@@ -336,11 +336,16 @@ public class MinecraftGL {
     int[] chestCountsAt(int x, int y, int z) { return chestStorage.countsAt(x, y, z); }
     void removeChest(int x, int y, int z) { chestStorage.remove(x, y, z); }
 
-    // Adapter dla EntityCollision (uzywa solid() ktore zna door meta)
+    // Adapter kolizji: pelne bloki oraz dokladny panel drzwi o grubosci 3/16.
     final craft3dgl.entities.EntityCollision.SolidCheck entitySolidCheck = new craft3dgl.entities.EntityCollision.SolidCheck() {
         @Override public boolean isSolid(int x, int y, int z) { return MinecraftGL.this.solid(x, y, z); }
         @Override public int getBlock(int x, int y, int z) { return world[x][y][z] & 0xff; }
         @Override public boolean inWorld(int x, int y, int z) { return MinecraftGL.this.inWorld(x, y, z); }
+        @Override public double[] getCollisionBounds(int x, int y, int z) {
+            int id = world[x][y][z] & 0xff;
+            return MinecraftGL.this.isDoor(id)
+                    ? DoorSystem.doorBox(getDoorMeta(x, y, z)) : null;
+        }
     };
 
     final Translations translationSys = new Translations();
@@ -381,9 +386,17 @@ public class MinecraftGL {
     void removeDoorMeta(int x, int y, int z) { doorSystem.removeMeta(x, y, z); }
     boolean isDoor(int id) { return id == DOOR_BOTTOM || id == DOOR_TOP; }
 
+    final DoorSystem.PlacementWorld doorPlacementWorld = new DoorSystem.PlacementWorld() {
+        @Override public boolean isNormalCube(int x, int y, int z) {
+            return isNormalCubeForDoor(x, y, z);
+        }
+        @Override public boolean isDoor(int x, int y, int z) {
+            return inWorld(x, y, z) && MinecraftGL.this.isDoor(world[x][y][z] & 0xff);
+        }
+    };
+
     int yawToFacing(double yaw) { return DoorSystem.yawToFacing(yaw); }
     double[] doorAabb(int meta) { return DoorSystem.doorAabb(meta); }
-    double[] doorAabb(int facing, boolean open) { return DoorSystem.doorAabb(facing, open); }
 
     Hit miningHit = null;
     double miningProgress = 0;
@@ -2329,27 +2342,6 @@ public class MinecraftGL {
 
     double hardness(int block) { return craft3dgl.world.MiningMechanics.hardness(block); }
 
-    double[] dirVec(int facing) { return DoorSystem.dirVec(facing); }
-
-    boolean doorWouldCrushEntity(int bx, int byBot, int bz, int meta) {
-        double[] a = doorAabb(meta);
-        double dx0 = bx + a[0], dz0 = bz + a[1];
-        double dx1 = bx + a[2], dz1 = bz + a[3];
-        double dy0 = byBot, dy1 = byBot + 2;
-        double px0 = x - PLAYER_RADIUS, px1 = x + PLAYER_RADIUS;
-        double pz0 = z - PLAYER_RADIUS, pz1 = z + PLAYER_RADIUS;
-        double py0 = y, py1 = y + playerHeight();
-        if (px1 > dx0 && px0 < dx1 && pz1 > dz0 && pz0 < dz1 && py1 > dy0 && py0 < dy1) return true;
-        double rA = 0.40;
-        for (AnimalGL an : animals) {
-            double ax0 = an.x - rA, ax1 = an.x + rA;
-            double az0 = an.z - rA, az1 = an.z + rA;
-            double ay0 = an.y, ay1 = an.y + 1.10;
-            if (ax1 > dx0 && ax0 < dx1 && az1 > dz0 && az0 < dz1 && ay1 > dy0 && ay0 < dy1) return true;
-        }
-        return false;
-    }
-
     void place(Hit hit) {
         if (hit.block == CRAFTING_TABLE) {
             openInventory(true);
@@ -2387,54 +2379,56 @@ public class MinecraftGL {
             }
         }
         if (hit.block == DOOR_BOTTOM || hit.block == DOOR_TOP) {
-            int bx = hit.x, byTop, byBot;
-            if (hit.block == DOOR_BOTTOM) { byBot = hit.y; byTop = hit.y + 1; }
-            else { byBot = hit.y - 1; byTop = hit.y; }
-            int metaB = getDoorMeta(bx, byBot, hit.z);
-            boolean wasOpen = (metaB & 4) != 0;
-            int facing = metaB & 3;
-            int newMeta;
-            if (wasOpen) {
-                newMeta = facing;
-            } else {
-                double cdx = x - (bx + 0.5);
-                double cdz = z - (hit.z + 0.5);
-                double awayX = -cdx, awayZ = -cdz;
-                double[] dirA = dirVec((facing + 1) % 4);
-                double[] dirB = dirVec((facing + 3) % 4);
-                double dotA = dirA[0]*awayX + dirA[1]*awayZ;
-                double dotB = dirB[0]*awayX + dirB[1]*awayZ;
-                int openSide = dotA >= dotB ? 0 : 1;
-                newMeta = facing | 4 | (openSide << 3);
-            }
-            if (doorWouldCrushEntity(bx, byBot, hit.z, newMeta)) {
-                sound.playClick();
-                return;
-            }
+            int bx = hit.x;
+            int byBot = hit.block == DOOR_BOTTOM ? hit.y : hit.y - 1;
+            int byTop = byBot + 1;
+            if (!inWorld(bx, byBot, hit.z)
+                    || (world[bx][byBot][hit.z] & 0xff) != DOOR_BOTTOM) return;
+
+            int meta = getDoorMeta(bx, byBot, hit.z);
+            boolean wasOpen = DoorSystem.isOpen(meta);
+            int newMeta = DoorSystem.withOpen(meta, !wasOpen);
             setDoorMeta(bx, byBot, hit.z, newMeta);
-            setDoorMeta(bx, byTop, hit.z, newMeta);
+            if (inWorld(bx, byTop, hit.z)
+                    && (world[bx][byTop][hit.z] & 0xff) == DOOR_TOP) {
+                setDoorMeta(bx, byTop, hit.z, newMeta);
+            }
             markDirtyAround(bx, byBot, hit.z);
             markDirtyAround(bx, byTop, hit.z);
             if (wasOpen) sound.playDoorClose(); else sound.playDoorOpen();
             return;
         }
+
         int item = selectedItemId();
         if (!isBlockItem(item) || selectedItemCount() <= 0) return;
-        int px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
-        if (!inWorld(px, py, pz)) return;
-        int existing = world[px][py][pz] & 0xff;
-        if (existing != AIR && existing != WATER) return;
-        if (blockIntersectsPlayer(px, py, pz)) return;
+
+        // ItemDoor.onItemUse z MC 1.12: drzwi stawia sie wylacznie na gornej
+        // scianie pelnego bloku, potrzebne sa dwie wymienialne komorki.
         if (item == DOOR_BOTTOM) {
-            if (py + 1 >= WORLD_Y) return;
-            int above = world[px][py + 1][pz] & 0xff;
-            if (above != AIR && above != WATER) return;
-            if (blockIntersectsPlayer(px, py + 1, pz)) return;
+            if (hit.ny != 1) return;
+            // Gdy klikniety blok jest replaceable (np. wysoka trawa), ItemDoor
+            // zastępuje go zamiast przesuwac pozycje o jeden blok w gore.
+            boolean replaceClicked = isReplaceableForDoor(hit.block);
+            int px = hit.x, py = replaceClicked ? hit.y : hit.y + 1, pz = hit.z;
+            if (!inWorld(px, py, pz) || !inWorld(px, py + 1, pz)) return;
+            if (!isNormalCubeForDoor(px, py - 1, pz)) return;
+            if (!isReplaceableForDoor(world[px][py][pz] & 0xff)
+                    || !isReplaceableForDoor(world[px][py + 1][pz] & 0xff)) return;
+
+            double cosPitch = Math.cos(pitch);
+            double hitWorldX = x + Math.sin(yaw) * cosPitch * hit.dist;
+            double hitWorldZ = z + Math.cos(yaw) * cosPitch * hit.dist;
+            double hitX = clamp(hitWorldX - hit.x, 0.0, 1.0);
+            double hitZ = clamp(hitWorldZ - hit.z, 0.0, 1.0);
             int facing = yawToFacing(yaw);
+            boolean rightHinge = DoorSystem.chooseRightHinge(
+                    px, py, pz, facing, hitX, hitZ, doorPlacementWorld);
+            int meta = DoorSystem.makeMeta(facing, false, rightHinge);
+
             setBlock(px, py, pz, DOOR_BOTTOM);
             setBlock(px, py + 1, pz, DOOR_TOP);
-            setDoorMeta(px, py, pz, facing);
-            setDoorMeta(px, py + 1, pz, facing);
+            setDoorMeta(px, py, pz, meta);
+            setDoorMeta(px, py + 1, pz, meta);
             sound.playPlace(item);
             if (gameMode != GAMEMODE_CREATIVE) {
                 invCount[selectedSlot]--;
@@ -2442,6 +2436,12 @@ public class MinecraftGL {
             }
             return;
         }
+
+        int px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
+        if (!inWorld(px, py, pz)) return;
+        int existing = world[px][py][pz] & 0xff;
+        if (existing != AIR && existing != WATER) return;
+        if (blockIntersectsPlayer(px, py, pz)) return;
         setBlock(px, py, pz, item);
         sound.playPlace(item);
         if (gameMode != GAMEMODE_CREATIVE) {
@@ -5964,6 +5964,25 @@ public class MinecraftGL {
         return craft3dgl.physics.RayCaster.cast(x, y + eyeHeight(), z, dx, dy, dz, maxDist, rayWorld);
     }
 
+    /** Usuwa drzwi stojace bez podloza i tworzy pojedynczy drop. */
+    void removeUnsupportedDoorAbove(int supportX, int supportY, int supportZ) {
+        int lowerY = supportY + 1;
+        if (!inWorld(supportX, lowerY, supportZ)
+                || (world[supportX][lowerY][supportZ] & 0xff) != DOOR_BOTTOM
+                || isNormalCubeForDoor(supportX, supportY, supportZ)) return;
+
+        world[supportX][lowerY][supportZ] = (byte)AIR;
+        removeDoorMeta(supportX, lowerY, supportZ);
+        markDirtyAround(supportX, lowerY, supportZ);
+        if (inWorld(supportX, lowerY + 1, supportZ)
+                && (world[supportX][lowerY + 1][supportZ] & 0xff) == DOOR_TOP) {
+            world[supportX][lowerY + 1][supportZ] = (byte)AIR;
+            removeDoorMeta(supportX, lowerY + 1, supportZ);
+            markDirtyAround(supportX, lowerY + 1, supportZ);
+        }
+        spawnDrop(supportX + 0.5, lowerY + 0.15, supportZ + 0.5, DOOR_BOTTOM, 1);
+    }
+
     void setBlock(int bx, int by, int bz, int id) {
         if (!inWorld(bx, by, bz)) return;
         int old = world[bx][by][bz] & 0xff;
@@ -5991,6 +6010,10 @@ public class MinecraftGL {
             removeDoorMeta(bx, by, bz);
         }
         world[bx][by][bz] = (byte) id;
+        // BlockDoor.neighborChanged: po utracie pelnego podloza obie polowki
+        // znikaja, a dolna polowka upuszcza dokladnie jeden item drzwi.
+        if (id != old) removeUnsupportedDoorAbove(bx, by, bz);
+
         // FIX: gdy niszczymy blok pod rosliną (tall_grass, wheat), roslinka tez znika (drop)
         // W MC to sie nazywa "block update" - roslina wymaga podloza pod soba
         if (id == AIR && inWorld(bx, by + 1, bz)) {
@@ -6116,15 +6139,28 @@ public class MinecraftGL {
         return (world[bx][by][bz] & 0xff) == WATER;
     }
 
+    /** Bloki, ktorych gorna sciana moze podpierac drzwi (MC: isTopSolid). */
+    boolean isNormalCubeForDoor(int bx, int by, int bz) {
+        if (!inWorld(bx, by, bz)) return false;
+        int id = world[bx][by][bz] & 0xff;
+        return id == GRASS || id == DIRT || id == STONE || id == WOOD
+                || id == LEAVES || id == SAND || id == PLANKS
+                || id == CRAFTING_TABLE;
+    }
+
+    /** Materialy replaceable, ktore ItemDoor moze zastapic. */
+    boolean isReplaceableForDoor(int id) {
+        return id == AIR || id == WATER || id == TALL_GRASS
+                || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3;
+    }
+
     boolean solid(int bx, int by, int bz) {
         if (by < 0) return true;
         if (bx < 0 || bz < 0 || bx >= WORLD_X || bz >= WORLD_Z) return true;
         if (by >= WORLD_Y) return false;
         int id = world[bx][by][bz] & 0xff;
-        if (id == DOOR_BOTTOM || id == DOOR_TOP) {
-            int meta = getDoorMeta(bx, by, bz);
-            return (meta & 4) == 0;
-        }
+        // Drzwi maja czesciowy AABB 3/16, obslugiwany osobno przez fizyke.
+        if (id == DOOR_BOTTOM || id == DOOR_TOP) return false;
         // Trawka i pszenica - przejscie przez nie (jak w MC)
         if (id == TALL_GRASS || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3) return false;
         return id != AIR && id != LEAVES && id != WATER;
@@ -6696,9 +6732,14 @@ public class MinecraftGL {
 
     // class Hit przeniesiona do craft3dgl.combat.Hit
 
-    /** Adapter dla RayCaster - daje dostep do tablicy swiata. */
+    /** Adapter RayCastera, lacznie z dokladnym selection boxem drzwi. */
     final craft3dgl.physics.RayCaster.WorldAccessor rayWorld = new craft3dgl.physics.RayCaster.WorldAccessor() {
         @Override public boolean inWorld(int x, int y, int z) { return MinecraftGL.this.inWorld(x, y, z); }
         @Override public int getBlock(int x, int y, int z) { return world[x][y][z] & 0xff; }
+        @Override public double[] getSelectionBounds(int x, int y, int z) {
+            int id = world[x][y][z] & 0xff;
+            return MinecraftGL.this.isDoor(id)
+                    ? DoorSystem.doorBox(getDoorMeta(x, y, z)) : null;
+        }
     };
 }

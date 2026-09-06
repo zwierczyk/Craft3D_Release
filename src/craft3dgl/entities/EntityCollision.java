@@ -17,22 +17,35 @@ public final class EntityCollision {
         boolean isSolid(int x, int y, int z);
         int getBlock(int x, int y, int z);
         boolean inWorld(int x, int y, int z);
+
+        /** Lokalny box {x0,y0,z0,x1,y1,z1} dla blokow czesciowych. */
+        default double[] getCollisionBounds(int x, int y, int z) { return null; }
     }
 
-    /** Czy bbox jest wolny (bez kolizji ze stalymi blokami). */
+    /** Czy bbox jest wolny (bez kolizji ze stalymi i czesciowymi blokami). */
     public static boolean isFreeAt(double cx, double cy, double cz,
                                     double radius, double height,
                                     SolidCheck w, int worldX, int worldY, int worldZ) {
-        int minX = (int)Math.floor(cx - radius), maxX = (int)Math.floor(cx + radius);
-        int minY = (int)Math.floor(cy);
-        int maxY = (int)Math.floor(cy + height - 0.001);
-        int minZ = (int)Math.floor(cz - radius), maxZ = (int)Math.floor(cz + radius);
+        double entityX0 = cx - radius, entityX1 = cx + radius;
+        double entityY0 = cy, entityY1 = cy + height;
+        double entityZ0 = cz - radius, entityZ1 = cz + radius;
+        int minX = (int)Math.floor(entityX0), maxX = (int)Math.floor(entityX1);
+        int minY = (int)Math.floor(entityY0);
+        int maxY = (int)Math.floor(entityY1 - 0.001);
+        int minZ = (int)Math.floor(entityZ0), maxZ = (int)Math.floor(entityZ1);
         if (minX < 0 || minZ < 0 || maxX >= worldX || maxZ >= worldZ) return false;
         for (int x = minX; x <= maxX; x++)
             for (int y = minY; y <= maxY; y++)
                 for (int z = minZ; z <= maxZ; z++) {
                     if (y < 0 || y >= worldY) continue;
                     if (w.isSolid(x, y, z)) return false;
+                    double[] box = w.getCollisionBounds(x, y, z);
+                    if (box != null
+                            && entityX1 > x + box[0] && entityX0 < x + box[3]
+                            && entityY1 > y + box[1] && entityY0 < y + box[4]
+                            && entityZ1 > z + box[2] && entityZ0 < z + box[5]) {
+                        return false;
+                    }
                 }
         return true;
     }

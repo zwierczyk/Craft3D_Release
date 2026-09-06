@@ -6,125 +6,153 @@ import static craft3dgl.world.WorldConstants.*;
 import static org.lwjgl.opengl.GL11.*;
 
 /**
- * Renderer drzwi MC-style:
- *  - 3px grubosci (jak MC)
- *  - PRZOD/TYL z pelna teksturą (okienka widoczne)
- *  - WEWNETRZNY SOLIDNY quad na srodku - wypelnia okienka drewnem
- *    (uzywamy waskiego paska UV z solidnej strony tekstury)
- *  - Boki (top/bottom/left/right caps) POMINIETE zeby przez okienka nie
- *    bylo widac wnetrza pustego pudelka.
+ * Renderer modelu debowych drzwi z Minecraft 1.12.
+ *
+ * Bazowy model jest panelem 3x16x16 px. Ma dwie teksturowane duze strony,
+ * dwie waskie krawedzie i zewnetrzny cap na dole/gorze. Pomiedzy polowkami
+ * nie ma dodatkowej scianki. Przez przezroczyste okna naprawde widac swiat.
  */
 public final class DoorRenderer {
     private DoorRenderer() {}
 
-    // Waski pasek UV z solidnej strony tekstury (lewa krawedz 3px = zawsze opaque drewno)
-    private static final double SOLID_UV_STRIP = 3.0 / 16.0;
-
     public static void drawAll(byte[][][] world, DoorSystem doors,
-                                double playerX, double playerZ,
-                                int textureAtlas, int range,
-                                LightEngine lightEngine, float dayMult) {
+                               double playerX, double playerZ,
+                               int textureAtlas, int range,
+                               LightEngine lightEngine, float dayMult) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, textureAtlas);
         float dayTint = 0.20f + dayMult * 0.80f;
         glEnable(GL_ALPHA_TEST);
         glAlphaFunc(GL_GREATER, 0.5f);
-        int minBx = Math.max(0, (int) playerX - range);
-        int maxBx = Math.min(WORLD_X - 1, (int) playerX + range);
-        int minBz = Math.max(0, (int) playerZ - range);
-        int maxBz = Math.min(WORLD_Z - 1, (int) playerZ + range);
+
+        int minX = Math.max(0, (int)playerX - range);
+        int maxX = Math.min(WORLD_X - 1, (int)playerX + range);
+        int minZ = Math.max(0, (int)playerZ - range);
+        int maxZ = Math.min(WORLD_Z - 1, (int)playerZ + range);
+
         glBegin(GL_QUADS);
-        for (int bx = minBx; bx <= maxBx; bx++)
-            for (int by = 0; by < WORLD_Y; by++)
-                for (int bz = minBz; bz <= maxBz; bz++) {
-                    int id = world[bx][by][bz] & 0xff;
-                    if (id != DOOR_BOTTOM && id != DOOR_TOP) continue;
-                    drawDoorBlock(doors, bx, by, bz, id, lightEngine, dayMult, dayTint);
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = 0; y < WORLD_Y; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    int id = world[x][y][z] & 0xff;
+                    if (id == DOOR_BOTTOM || id == DOOR_TOP) {
+                        drawDoorHalf(doors, x, y, z, id, lightEngine, dayMult, dayTint);
+                    }
                 }
+            }
+        }
         glEnd();
         glDisable(GL_ALPHA_TEST);
+        glColor4f(1, 1, 1, 1);
     }
 
     public static void drawAll(byte[][][] world, DoorSystem doors,
-                                double playerX, double playerZ,
-                                int textureAtlas, int range) {
+                               double playerX, double playerZ,
+                               int textureAtlas, int range) {
         drawAll(world, doors, playerX, playerZ, textureAtlas, range, null, 1.0f);
     }
 
-    private static void drawDoorBlock(DoorSystem doors,
-                                       int bx, int by, int bz, int id,
-                                       LightEngine lightEngine, float dayMult, float dayTint) {
-        int meta = doors.getMeta(bx, by, bz);
-        double[] aabb = DoorSystem.doorAabb(meta);
-        double x0 = bx + aabb[0], z0 = bz + aabb[1];
-        double x1 = bx + aabb[2], z1 = bz + aabb[3];
-        double y0 = by, y1 = by + 1;
-        double dx = aabb[2] - aabb[0];
-        double dz = aabb[3] - aabb[1];
-        boolean wideOnX = dx > dz;
+    private static void drawDoorHalf(DoorSystem doors, int x, int y, int z, int id,
+                                     LightEngine lightEngine, float dayMult, float dayTint) {
+        int meta = doors.getMeta(x, y, z);
+        int facing = DoorSystem.facing(meta);
+        boolean open = DoorSystem.isOpen(meta);
+        boolean rightHinge = DoorSystem.isRightHinge(meta);
+
+        // Odpowiednik wariantow wooden_door_bottom(_rh) i obrotow blockstate.
+        boolean rightHandModel = rightHinge ^ open;
+        int rotation;
+        if (!open) rotation = (facing + 1) & 3;
+        else rotation = rightHinge ? facing : ((facing + 2) & 3);
+
+        float environment = lightEngine == null
+                ? 1.0f : lightEngine.sampleShade(x, y, z, dayMult);
+        float faceLight = environment * dayTint;
+        float edgeLight = faceLight * 0.82f;
 
         int tile = id == DOOR_BOTTOM ? 12 : 13;
         double u0 = TextureAtlas.atlasU0(tile);
         double u1 = TextureAtlas.atlasU1(tile);
         double v0 = TextureAtlas.atlasV0();
         double v1 = TextureAtlas.atlasV1();
-        // Waski pasek UV (solidny, bez okienek - z lewej krawedzi tekstury)
-        double uSol0 = u0;
-        double uSol1 = u0 + (u1 - u0) * SOLID_UV_STRIP;
+        double edgeU = u0 + (u1 - u0) * (3.0 / 16.0);
+        double largeU0 = rightHandModel ? u1 : u0;
+        double largeU1 = rightHandModel ? u0 : u1;
+        double thickness = DoorSystem.THICKNESS;
 
-        float envLight = 1.0f;
-        if (lightEngine != null) {
-            envLight = lightEngine.sampleShade(bx, by, bz, dayMult);
-        }
-        float faceShade = 1.00f * envLight * dayTint;
-        float coreShade = 0.90f * envLight * dayTint;
-        glColor3f(faceShade, faceShade, faceShade);
+        // WEST duza strona bazowego modelu.
+        glColor3f(faceLight, faceLight, faceLight);
+        texVertex(largeU0, v1, x, y, z, 0, 0, 0, rotation);
+        texVertex(largeU1, v1, x, y, z, 0, 0, 1, rotation);
+        texVertex(largeU1, v0, x, y, z, 0, 1, 1, rotation);
+        texVertex(largeU0, v0, x, y, z, 0, 1, 0, rotation);
 
-        if (wideOnX) {
-            double zM = (z0 + z1) * 0.5;
-            // PRZOD +Z (na z1, pelna tekstura z okienkami)
-            glTexCoord2d(u0,v1); glVertex3d(x0,y0,z1);
-            glTexCoord2d(u1,v1); glVertex3d(x1,y0,z1);
-            glTexCoord2d(u1,v0); glVertex3d(x1,y1,z1);
-            glTexCoord2d(u0,v0); glVertex3d(x0,y1,z1);
-            // TYL -Z (na z0, mirror)
-            glTexCoord2d(u1,v1); glVertex3d(x0,y0,z0);
-            glTexCoord2d(u0,v1); glVertex3d(x1,y0,z0);
-            glTexCoord2d(u0,v0); glVertex3d(x1,y1,z0);
-            glTexCoord2d(u1,v0); glVertex3d(x0,y1,z0);
-            // WEWNETRZNY SOLIDNY quad na srodku - wypelnia okienka drewnem
-            glColor3f(coreShade, coreShade, coreShade);
-            // Rysujemy dwa razy (2 orientacje) zeby widac z obu stron
-            glTexCoord2d(uSol0,v1); glVertex3d(x0,y0,zM);
-            glTexCoord2d(uSol1,v1); glVertex3d(x1,y0,zM);
-            glTexCoord2d(uSol1,v0); glVertex3d(x1,y1,zM);
-            glTexCoord2d(uSol0,v0); glVertex3d(x0,y1,zM);
-            glTexCoord2d(uSol1,v1); glVertex3d(x0,y0,zM);
-            glTexCoord2d(uSol0,v1); glVertex3d(x1,y0,zM);
-            glTexCoord2d(uSol0,v0); glVertex3d(x1,y1,zM);
-            glTexCoord2d(uSol1,v0); glVertex3d(x0,y1,zM);
+        // EAST duza strona; odwrotna kolejnosc daje lustrzany tyl tekstury.
+        texVertex(largeU0, v1, x, y, z, thickness, 0, 1, rotation);
+        texVertex(largeU1, v1, x, y, z, thickness, 0, 0, rotation);
+        texVertex(largeU1, v0, x, y, z, thickness, 1, 0, rotation);
+        texVertex(largeU0, v0, x, y, z, thickness, 1, 1, rotation);
+
+        // NORTH/SOUTH - waskie krawedzie z 3-pikselowych paskow tekstury.
+        glColor3f(edgeLight, edgeLight, edgeLight);
+        texVertex(edgeU, v1, x, y, z, thickness, 0, 0, rotation);
+        texVertex(u0, v1, x, y, z, 0, 0, 0, rotation);
+        texVertex(u0, v0, x, y, z, 0, 1, 0, rotation);
+        texVertex(edgeU, v0, x, y, z, thickness, 1, 0, rotation);
+
+        texVertex(u0, v1, x, y, z, 0, 0, 1, rotation);
+        texVertex(edgeU, v1, x, y, z, thickness, 0, 1, rotation);
+        texVertex(edgeU, v0, x, y, z, thickness, 1, 1, rotation);
+        texVertex(u0, v0, x, y, z, 0, 1, 1, rotation);
+
+        // Vanilla nie rysuje scianki pomiedzy dwiema polowkami drzwi.
+        // Dolny cap wystepuje tylko w lower, a gorny tylko w upper.
+        if (id == DOOR_BOTTOM) {
+            double capU0 = u0 + (u1 - u0) * (13.0 / 16.0);
+            glColor3f(edgeLight, edgeLight, edgeLight);
+            texVertex(capU0, v0, x, y, z, 0, 0, 0, rotation);
+            texVertex(u1, v0, x, y, z, thickness, 0, 0, rotation);
+            texVertex(u1, v1, x, y, z, thickness, 0, 1, rotation);
+            texVertex(capU0, v1, x, y, z, 0, 0, 1, rotation);
         } else {
-            double xM = (x0 + x1) * 0.5;
-            // PRZOD +X (na x1)
-            glTexCoord2d(u1,v1); glVertex3d(x1,y0,z0);
-            glTexCoord2d(u0,v1); glVertex3d(x1,y0,z1);
-            glTexCoord2d(u0,v0); glVertex3d(x1,y1,z1);
-            glTexCoord2d(u1,v0); glVertex3d(x1,y1,z0);
-            // TYL -X (na x0, mirror)
-            glTexCoord2d(u0,v1); glVertex3d(x0,y0,z0);
-            glTexCoord2d(u1,v1); glVertex3d(x0,y0,z1);
-            glTexCoord2d(u1,v0); glVertex3d(x0,y1,z1);
-            glTexCoord2d(u0,v0); glVertex3d(x0,y1,z0);
-            // WEWNETRZNY SOLIDNY quad na srodku
-            glColor3f(coreShade, coreShade, coreShade);
-            glTexCoord2d(uSol1,v1); glVertex3d(xM,y0,z0);
-            glTexCoord2d(uSol0,v1); glVertex3d(xM,y0,z1);
-            glTexCoord2d(uSol0,v0); glVertex3d(xM,y1,z1);
-            glTexCoord2d(uSol1,v0); glVertex3d(xM,y1,z0);
-            glTexCoord2d(uSol0,v1); glVertex3d(xM,y0,z0);
-            glTexCoord2d(uSol1,v1); glVertex3d(xM,y0,z1);
-            glTexCoord2d(uSol1,v0); glVertex3d(xM,y1,z1);
-            glTexCoord2d(uSol0,v0); glVertex3d(xM,y1,z0);
+            // Model top uzywa tekstury dolnej polowki dla waskiego top capa.
+            double capTileU0 = TextureAtlas.atlasU0(12);
+            double capTileU1 = TextureAtlas.atlasU1(12);
+            double capU0 = capTileU0 + (capTileU1 - capTileU0) * (13.0 / 16.0);
+            glColor3f(edgeLight, edgeLight, edgeLight);
+            texVertex(capU0, v1, x, y, z, 0, 1, 1, rotation);
+            texVertex(capTileU1, v1, x, y, z, thickness, 1, 1, rotation);
+            texVertex(capTileU1, v0, x, y, z, thickness, 1, 0, rotation);
+            texVertex(capU0, v0, x, y, z, 0, 1, 0, rotation);
         }
+    }
+
+    /** Obraca wierzcholek bazowego modelu wokol srodka bloku co 90 stopni. */
+    private static void texVertex(double u, double v,
+                                  int blockX, int blockY, int blockZ,
+                                  double localX, double localY, double localZ,
+                                  int rotation) {
+        double x;
+        double z;
+        switch (rotation & 3) {
+            case 1:
+                x = 1.0 - localZ;
+                z = localX;
+                break;
+            case 2:
+                x = 1.0 - localX;
+                z = 1.0 - localZ;
+                break;
+            case 3:
+                x = localZ;
+                z = 1.0 - localX;
+                break;
+            default:
+                x = localX;
+                z = localZ;
+                break;
+        }
+        glTexCoord2d(u, v);
+        glVertex3d(blockX + x, blockY + localY, blockZ + z);
     }
 }
