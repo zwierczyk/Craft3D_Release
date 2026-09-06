@@ -5385,9 +5385,19 @@ public class MinecraftGL {
             return;
         }
 
-        // Direct port of ItemRenderer.transformEatFirstPerson z MCP 9.40.
-        // Craft3D use is 0..1 over 32 ticks, so remaining ticks are 32*(1-use).
         boolean eating = eatingItemId == held && eatingProgress > 0;
+        float swingProgress = swingTimer > 0 ? (float)(1.0 - swingTimer) : 0f;
+        glPushMatrix();
+        applyMinecraftFirstPersonItemTransform(swingProgress, eating);
+        boolean renderedMinecraftItem = drawMinecraftFirstPersonItem(held);
+        glPopMatrix();
+        if (renderedMinecraftItem) {
+            finishHandOverlay();
+            return;
+        }
+
+        // Awaryjna sciezka dla przedmiotow bez tekstury/modelu.
+        // Craft3D use is 0..1 over 32 ticks, so remaining ticks are 32*(1-use).
         if (eating) {
             double use = Math.min(1.0, eatingProgress / 1.6);
             double remaining = 32.0 * (1.0 - use);
@@ -5547,6 +5557,103 @@ public class MinecraftGL {
         finishHandOverlay();
     }
 
+    /** ItemRenderer.transformSideFirstPerson/transformFirstPerson z MCP 9.40. */
+    void applyMinecraftFirstPersonItemTransform(float swingProgress, boolean eating) {
+        if (eating) {
+            double use = Math.min(1.0, eatingProgress / 1.6);
+            double remaining = 32.0 * (1.0 - use);
+            double fractionRemaining = remaining / 32.0;
+            if (fractionRemaining < 0.8) {
+                glTranslated(0, Math.abs(Math.cos(remaining / 4.0 * Math.PI) * 0.1), 0);
+            }
+            double progress = 1.0 - Math.pow(fractionRemaining, 27.0);
+            glTranslated(progress * 0.6, progress * -0.5, 0);
+            glRotated(progress * 90.0, 0, 1, 0);
+            glRotated(progress * 10.0, 1, 0, 0);
+            glRotated(progress * 30.0, 0, 0, 1);
+        } else {
+            double root = Math.sqrt(swingProgress);
+            glTranslated(-0.4 * Math.sin(root * Math.PI),
+                    0.2 * Math.sin(root * Math.PI * 2.0),
+                    -0.2 * Math.sin(swingProgress * Math.PI));
+        }
+
+        // transformSideFirstPerson(RIGHT, equipProgress=0)
+        glTranslated(0.56, -0.52, -0.72);
+        if (!eating) {
+            // transformFirstPerson(RIGHT, swingProgress)
+            double turn = Math.sin(swingProgress * swingProgress * Math.PI);
+            double swing = Math.sin(Math.sqrt(swingProgress) * Math.PI);
+            glRotated(45.0 - turn * 20.0, 0, 1, 0);
+            glRotated(swing * -20.0, 0, 0, 1);
+            glRotated(swing * -80.0, 1, 0, 0);
+            glRotated(-45.0, 0, 1, 0);
+        }
+    }
+
+    /** Render modelu FIRST_PERSON_RIGHT_HAND z block.json/generated.json. */
+    boolean drawMinecraftFirstPersonItem(int held) {
+        if (isBlockItem(held) && held != DOOR_BOTTOM) {
+            craft3dgl.world.LightEngine savedLE = lightEngine;
+            float savedDay = currentDayMult;
+            lightEngine = null;
+            currentDayMult = 1.0f;
+            try {
+                glPushMatrix();
+                // assets/minecraft/models/block/block.json
+                glRotated(45.0, 0, 1, 0);
+                glScaled(0.40, 0.40, 0.40);
+                glTranslated(-0.5, -0.5, -0.5);
+                glColor4f(1, 1, 1, 1);
+                glEnable(GL_TEXTURE_2D);
+                glDisable(GL_ALPHA_TEST);
+                glDisable(GL_BLEND);
+                glBindTexture(GL_TEXTURE_2D, textureAtlas);
+                glBegin(GL_QUADS);
+                for (int dir = 0; dir < 6; dir++) face(0, 0, 0, held, dir);
+                glEnd();
+                glPopMatrix();
+            } finally {
+                lightEngine = savedLE;
+                currentDayMult = savedDay;
+            }
+            return true;
+        }
+
+        if (toolCategory(held) > 0) {
+            if (drawToolSpriteInHand(held)) return true;
+            glPushMatrix();
+            applyGeneratedItemModelTransform();
+            glDisable(GL_TEXTURE_2D);
+            drawToolModel3D(held);
+            glEnable(GL_TEXTURE_2D);
+            glPopMatrix();
+            return true;
+        }
+
+        if (held == ITEM_STICK) {
+            glPushMatrix();
+            applyGeneratedItemModelTransform();
+            glDisable(GL_TEXTURE_2D);
+            glColor4f(0.55f, 0.32f, 0.15f, 1f);
+            drawCuboid(-0.025, -0.45, -0.025, 0.025, 0.45, 0.025);
+            glEnable(GL_TEXTURE_2D);
+            glPopMatrix();
+            return true;
+        }
+
+        // generated.json: jedzenie, emerald, nasiona, pszenica i drzwi jako item.
+        return drawFoodSpriteInHand(held);
+    }
+
+    void applyGeneratedItemModelTransform() {
+        // item/generated.json i item/handheld.json: firstperson_righthand
+        glTranslated(1.13 / 16.0, 3.2 / 16.0, 1.13 / 16.0);
+        glRotated(-90.0, 0, 1, 0);
+        glRotated(25.0, 0, 0, 1);
+        glScaled(0.68, 0.68, 0.68);
+    }
+
     void finishHandOverlay() {
         glPopMatrix();
         glMatrixMode(GL_PROJECTION);
@@ -5597,12 +5704,7 @@ public class MinecraftGL {
         glDisable(GL_ALPHA_TEST);
 
         glPushMatrix();
-        // TUNING MODE - uzyj static values (dostosowane strzalkami w game)
-        glTranslated(itemTuneX, itemTuneY, itemTuneZ);
-        if (Math.abs(itemTuneRotX) > 0.01f) glRotated(itemTuneRotX, 1, 0, 0);
-        if (Math.abs(itemTuneRotY) > 0.01f) glRotated(itemTuneRotY, 0, 1, 0);
-        if (Math.abs(itemTuneRotZ) > 0.01f) glRotated(itemTuneRotZ, 0, 0, 1);
-        glScaled(itemTuneScale, itemTuneScale, itemTuneScale);
+        applyGeneratedItemModelTransform();
 
         // Voxel grid: 16x16 pixel -> 1x1 blok (0..1)
         int w = mesh.width, h = mesh.height;
@@ -5693,12 +5795,7 @@ public class MinecraftGL {
         glDisable(GL_BLEND);
         glDisable(GL_ALPHA_TEST);
         glPushMatrix();
-        // FOOD tuning values (F12 mode)
-        // assets/minecraft/models/item/generated.json firstperson_righthand
-        glTranslated(1.13 / 16.0, 3.2 / 16.0, 1.13 / 16.0);
-        glRotated(-90.0, 0, 1, 0);
-        glRotated(25.0, 0, 0, 1);
-        glScaled(0.68, 0.68, 0.68);
+        applyGeneratedItemModelTransform();
         if (mesh != null) {
             glDisable(GL_TEXTURE_2D);
             int w = mesh.width, h = mesh.height;

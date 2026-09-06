@@ -67,6 +67,7 @@ public final class ToolMeshBuilder {
             loadOne(dir, "beef.png",           MinecraftGL.ITEM_BEEF);
             loadOne(dir, "mutton.png",         MinecraftGL.ITEM_MUTTON);
             loadOne(dir, "porkchop.png",       MinecraftGL.ITEM_PORK);
+            loadOne(dir, "oak_door.png",        MinecraftGL.DOOR_BOTTOM);
             System.out.println("[ToolMeshBuilder] voxelized " + CACHE.size() + " tools");
             loaded = true;
         } catch (Throwable t) {

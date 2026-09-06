@@ -369,6 +369,40 @@ public final class SteveRenderer {
                x1, y1, z1,  x1, y1, z0,  x1, y0, z0,  x1, y0, z1);
     }
 
+    /**
+     * Box w surowym ukladzie ModelBox (Y+ w dol, przod na Z-). Jest potrzebny
+     * dla ItemRenderer.renderArmFirstPerson, ktory sam naklada minecraftowe
+     * transformacje i nie przechodzi przez konwersje osi modelu swiata.
+     */
+    private static void drawMinecraftBox(int u, int v, float x, float y, float z,
+                                         int wpx, int hpx, int dpx, float inflate) {
+        float w = wpx * S, h = hpx * S, d = dpx * S;
+        float x0 = x - inflate, y0 = y - inflate, z0 = z - inflate;
+        float x1 = x + w + inflate, y1 = y + h + inflate, z1 = z + d + inflate;
+        float tu = 1f / 64f, tv = 1f / 64f;
+        int uTop = u + dpx;
+        int uBottom = u + dpx + wpx;
+        int vSide = v + dpx;
+        int uRight = u;
+        int uFront = u + dpx;
+        int uLeft = u + dpx + wpx;
+        int uBack = u + dpx + wpx + dpx;
+
+        // ModelBox: gora jest na Y-, a przod skina na Z-.
+        uvQuad(uTop, v, wpx, dpx, tu, tv, false,
+                x0,y0,z1, x1,y0,z1, x1,y0,z0, x0,y0,z0);
+        uvQuad(uBottom, v, wpx, dpx, tu, tv, false,
+                x0,y1,z1, x1,y1,z1, x1,y1,z0, x0,y1,z0);
+        uvQuad(uFront, vSide, wpx, hpx, tu, tv, false,
+                x0,y0,z0, x1,y0,z0, x1,y1,z0, x0,y1,z0);
+        uvQuad(uBack, vSide, wpx, hpx, tu, tv, false,
+                x1,y0,z1, x0,y0,z1, x0,y1,z1, x1,y1,z1);
+        uvQuad(uRight, vSide, dpx, hpx, tu, tv, false,
+                x0,y0,z1, x0,y0,z0, x0,y1,z0, x0,y1,z1);
+        uvQuad(uLeft, vSide, dpx, hpx, tu, tv, false,
+                x1,y0,z0, x1,y0,z1, x1,y1,z1, x1,y1,z0);
+    }
+
     private static void uvQuad(int u, int v, int tw, int th, float Tu, float Tv, boolean flipU,
                                float x1, float y1, float z1,
                                float x2, float y2, float z2,
@@ -401,9 +435,10 @@ public final class SteveRenderer {
         glBindTexture(GL_TEXTURE_2D, texSteve);
         glColor4f(1, 1, 1, 1);
         // PlayerModel rightArm: addBox(-3,-2,-2, 4,12,4), rendered at 1/16 scale.
-        drawBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f, 4, 12, 4, false);
-        drawBox(40, 32, -3f / 16f, -2f / 16f, -2f / 16f,
-                4, 12, 4, false, 0.25f * S);
+        drawMinecraftBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f,
+                4, 12, 4, 0.0f);
+        drawMinecraftBox(40, 32, -3f / 16f, -2f / 16f, -2f / 16f,
+                4, 12, 4, 0.25f * S);
         glDisable(GL_ALPHA_TEST);
         glDisable(GL_BLEND);
         glPopAttrib();
@@ -452,9 +487,10 @@ public final class SteveRenderer {
         // Nie dodajemy drugiego offsetu ani skali — wczesniej spychaly reke poza ekran.
         // PlayerModel rightArm: setPos(-5,2,0), addBox(-3,-2,-2, 4,12,4), render(1/16).
         glTranslatef(-5f / 16f, 2f / 16f, 0);
-        drawBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f, 4, 12, 4, false);
-        drawBox(40, 32, -3f / 16f, -2f / 16f, -2f / 16f,
-                4, 12, 4, false, 0.25f * S);
+        drawMinecraftBox(40, 16, -3f / 16f, -2f / 16f, -2f / 16f,
+                4, 12, 4, 0.0f);
+        drawMinecraftBox(40, 32, -3f / 16f, -2f / 16f, -2f / 16f,
+                4, 12, 4, 0.25f * S);
         glPopMatrix();
         glDisable(GL_ALPHA_TEST);
         glDisable(GL_BLEND);
