@@ -200,6 +200,27 @@ public final class FontRenderer {
         glBindTexture(GL_TEXTURE_2D, textureAtlasToRestore);
     }
 
+    /** GuiNewChat/GuiTextField white pixel font with vanilla one-pixel shadow. */
+    public void drawVanillaText(String text, int x, int y, int pixelScale, float alpha) {
+        if (text == null || text.isEmpty()) return;
+        alpha = Math.max(0f, Math.min(1f, alpha));
+        if (mcFontTexture == 0) {
+            drawText(text, x, y, pixelScale * 0.25f);
+            return;
+        }
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, mcFontTexture);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0f, 0f, 0f, 0.65f * alpha);
+        drawMcTextRaw(text, x + pixelScale, y + pixelScale, pixelScale);
+        glColor4f(1f, 1f, 1f, alpha);
+        drawMcTextRaw(text, x, y, pixelScale);
+        glDisable(GL_BLEND);
+        glColor4f(1f, 1f, 1f, 1f);
+        glBindTexture(GL_TEXTURE_2D, textureAtlasToRestore);
+    }
+
     /** Vanilla ItemRenderer stack count: white pixel font with one-pixel shadow. */
     public void drawVanillaStackCount(String text, int x, int y, int pixelScale) {
         if (text == null || text.isEmpty()) return;

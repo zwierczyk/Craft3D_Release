@@ -30,6 +30,62 @@ public final class ChatCommands {
 
     private ChatCommands() {}
 
+    private static final String[] COMMANDS = {
+            "gamemode", "fly", "tp", "give", "effect", "time", "weather",
+            "fps", "rebuild", "rebuildvillages", "help"
+    };
+    private static final String[] GIVE_ITEMS = {
+            "grass", "dirt", "stone", "wood", "leaves", "sand", "planks",
+            "crafting_table", "door", "chest", "water", "stick",
+            "wood_pickaxe", "stone_pickaxe", "wood_axe", "stone_axe",
+            "wood_shovel", "stone_shovel", "wood_sword", "stone_sword",
+            "wood_hoe", "stone_hoe", "pork", "beef", "mutton", "emerald",
+            "bread", "seeds", "wheat", "tall_grass", "farmland"
+    };
+
+    /**
+     * Client-side TabCompleter equivalent. Returned strings replace the whole
+     * edit field, which makes repeated Tab cycle through valid command options.
+     */
+    public static java.util.List<String> complete(String input) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<String>();
+        if (input == null || !input.startsWith("/")) return out;
+        String body = input.substring(1);
+        int lastSpace = body.lastIndexOf(' ');
+        if (lastSpace < 0) {
+            addMatches(out, "/", body, COMMANDS, true);
+            return out;
+        }
+        String[] parts = body.substring(0, lastSpace + 1).trim().split("\\s+");
+        String command = parts.length == 0 ? "" : parts[0].toLowerCase();
+        String prefix = body.substring(lastSpace + 1).toLowerCase();
+        String base = "/" + body.substring(0, lastSpace + 1);
+        if (command.equals("gamemode") || command.equals("gm")) {
+            addMatches(out, base, prefix, new String[]{"survival", "creative"}, false);
+        } else if (command.equals("weather")) {
+            addMatches(out, base, prefix, new String[]{"clear", "rain", "thunder"}, false);
+        } else if (command.equals("effect")) {
+            addMatches(out, base, prefix, new String[]{"night_vision", "clear"}, false);
+        } else if (command.equals("give")) {
+            addMatches(out, base, prefix, GIVE_ITEMS, false);
+        } else if (command.equals("time")) {
+            if (parts.length <= 1) addMatches(out, base, prefix, new String[]{"set"}, true);
+            else if (parts.length == 2 && parts[1].equalsIgnoreCase("set")) {
+                addMatches(out, base, prefix, new String[]{"day", "night"}, false);
+            }
+        }
+        return out;
+    }
+
+    private static void addMatches(java.util.List<String> out, String base, String prefix,
+                                   String[] values, boolean appendSpace) {
+        for (String value : values) {
+            if (value.startsWith(prefix.toLowerCase())) {
+                out.add(base + value + (appendSpace ? " " : ""));
+            }
+        }
+    }
+
     /** Wykonaj komende, np. "/give wheat 10". */
     public static void handle(String cmd, CommandContext ctx) {
         String body = cmd.startsWith("/") ? cmd.substring(1).trim() : cmd.trim();

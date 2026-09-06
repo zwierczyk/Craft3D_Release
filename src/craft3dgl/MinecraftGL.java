@@ -318,6 +318,14 @@ public class MinecraftGL {
     boolean chatOpen = false;
     boolean chatIgnoreNextChar = false;
     StringBuilder chatInput = new StringBuilder();
+    int chatCursor = 0;
+    int chatSelection = 0;
+    int chatScroll = 0;
+    final java.util.ArrayList<String> sentChatHistory = new java.util.ArrayList<String>();
+    int sentHistoryCursor = 0;
+    String chatHistoryDraft = "";
+    java.util.List<String> chatCompletions = java.util.Collections.emptyList();
+    int chatCompletionIndex = -1;
     final java.util.ArrayList<ChatMessage> chatLog = new java.util.ArrayList<>();
     boolean tWasDown = false;
     boolean slashWasDown = false;
@@ -330,6 +338,12 @@ public class MinecraftGL {
     final java.util.HashMap<Long, Integer> chestFacings = chestStorage.facings;
     boolean chestOpen = false;
     int chestOpenX, chestOpenY, chestOpenZ;
+    /** Combined ContainerChest view: 27 slots for single, 54 for double. */
+    final int[] openChestIds = new int[CHEST_SIZE * 2];
+    final int[] openChestCounts = new int[CHEST_SIZE * 2];
+    int openChestSlots = CHEST_SIZE;
+    long openChestPrimaryKey = Long.MIN_VALUE;
+    long openChestSecondaryKey = Long.MIN_VALUE;
     /** TileEntityChest lidAngle, 0 closed .. 1 open. */
     float chestLidProgress = 0f;
     boolean chestMouseWasDown = false;
@@ -430,6 +444,7 @@ public class MinecraftGL {
     /** Czas w grze w sekundach (Minecraft 1.12: 24000 tickow = 1200 sekund). */
     double gameTime = 600.0; // start w poludnie (0.5 fraction)
     final craft3dgl.world.WeatherState weather = new craft3dgl.world.WeatherState(0L);
+    double rainSoundTimer = 0.0;
     /** Poprzedni stan gracza w wodzie - do splash particles. */
     boolean wasInWater = false;
     /** Timer footstep dust particles. */
@@ -519,7 +534,12 @@ public class MinecraftGL {
             pitch = clamp(pitch, -1.50, 1.50);
         });
         glfwSetScrollCallback(window, (w, xOffset, yOffset) -> {
-            pendingScroll += yOffset;
+            if (chatOpen) {
+                int amount = (int)Math.round(yOffset * 7.0);
+                chatScroll = Math.max(0, Math.min(Math.max(0, chatLog.size() - 1), chatScroll + amount));
+            } else {
+                pendingScroll += yOffset;
+            }
         });
         glfwSetCharCallback(window, (w, codepoint) -> {
             if (creativeInvOpen) {
@@ -528,18 +548,75 @@ public class MinecraftGL {
             }
             if (!chatOpen) return;
             if (chatIgnoreNextChar) { chatIgnoreNextChar = false; return; }
-            if (codepoint >= 32 && codepoint < 0x10000 && chatInput.length() < 240) {
-                chatInput.append((char) codepoint);
+            if (codepoint >= 32 && codepoint < 0x10000) {
+                deleteChatSelection();
+                if (chatInput.length() < 256) {
+                    chatInput.insert(chatCursor, (char) codepoint);
+                    chatCursor++;
+                    chatSelection = chatCursor;
+                    resetChatCompletion();
+                }
             }
         });
         glfwSetKeyCallback(window, (w, key, scancode, action, mods) -> {
             if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
             if (inMainMenu || paused || deathScreen) return;
             if (chatOpen) {
+                boolean control = (mods & GLFW_MOD_CONTROL) != 0;
+                boolean shift = (mods & GLFW_MOD_SHIFT) != 0;
                 if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
                     submitChat();
                 } else if (key == GLFW_KEY_BACKSPACE) {
-                    if (chatInput.length() > 0) chatInput.deleteCharAt(chatInput.length() - 1);
+                    if (!deleteChatSelection() && chatCursor > 0) {
+                        chatInput.deleteCharAt(--chatCursor);
+                        chatSelection = chatCursor;
+                        resetChatCompletion();
+                    }
+                } else if (key == GLFW_KEY_DELETE) {
+                    if (!deleteChatSelection() && chatCursor < chatInput.length()) {
+                        chatInput.deleteCharAt(chatCursor);
+                        chatSelection = chatCursor;
+                        resetChatCompletion();
+                    }
+                } else if (key == GLFW_KEY_LEFT) {
+                    if (!shift && chatCursor != chatSelection) chatCursor = Math.min(chatCursor, chatSelection);
+                    else if (chatCursor > 0) chatCursor--;
+                    if (!shift) chatSelection = chatCursor;
+                } else if (key == GLFW_KEY_RIGHT) {
+                    if (!shift && chatCursor != chatSelection) chatCursor = Math.max(chatCursor, chatSelection);
+                    else if (chatCursor < chatInput.length()) chatCursor++;
+                    if (!shift) chatSelection = chatCursor;
+                } else if (key == GLFW_KEY_HOME) {
+                    chatCursor = 0;
+                    if (!shift) chatSelection = chatCursor;
+                } else if (key == GLFW_KEY_END) {
+                    chatCursor = chatInput.length();
+                    if (!shift) chatSelection = chatCursor;
+                } else if (key == GLFW_KEY_UP) {
+                    navigateChatHistory(-1);
+                } else if (key == GLFW_KEY_DOWN) {
+                    navigateChatHistory(1);
+                } else if (key == GLFW_KEY_TAB) {
+                    completeChatInput();
+                } else if (key == GLFW_KEY_PAGE_UP) {
+                    chatScroll = Math.min(Math.max(0, chatLog.size() - 1), chatScroll + 7);
+                } else if (key == GLFW_KEY_PAGE_DOWN) {
+                    chatScroll = Math.max(0, chatScroll - 7);
+                } else if (control && key == GLFW_KEY_A) {
+                    chatSelection = 0;
+                    chatCursor = chatInput.length();
+                } else if (control && key == GLFW_KEY_C) {
+                    String selected = selectedChatText();
+                    if (!selected.isEmpty()) glfwSetClipboardString(window, selected);
+                } else if (control && key == GLFW_KEY_X) {
+                    String selected = selectedChatText();
+                    if (!selected.isEmpty()) {
+                        glfwSetClipboardString(window, selected);
+                        deleteChatSelection();
+                    }
+                } else if (control && key == GLFW_KEY_V) {
+                    String paste = glfwGetClipboardString(window);
+                    if (paste != null && !paste.isEmpty()) insertChatText(paste);
                 } else if (key == GLFW_KEY_ESCAPE) {
                     closeChat(false);
                 }
@@ -1259,7 +1336,7 @@ public class MinecraftGL {
                 int ty = findSurfaceSpawnY(tx, tz);
                 if (ty <= 0) continue;
                 if (!validVillagerSpawn(tx, ty, tz)) continue;
-                int prof = rand.nextInt(3); // losowa profesja
+                int prof = rand.nextInt(5); // 1.12: farmer, librarian, priest, smith, butcher
                 VillagerGL v = new VillagerGL(tx + 0.5, ty, tz + 0.5, prof);
                 v.onGround = true;
                 v.homeX = vx;
@@ -1511,6 +1588,7 @@ public class MinecraftGL {
         lastAttackItemId = Integer.MIN_VALUE; sprintDisableTimer = 0.0;
         walkPhase = 0; lastPosInit = false; wasInWater = false;
         gameTime = 600.0;
+        rainSoundTimer = 0.0;
         weather.load(false, false, 12000, 12000, 0f, 0f);
         particleSystem.clear();
     }
@@ -1871,6 +1949,32 @@ public class MinecraftGL {
         }
     }
 
+    void tickWorldClocks(double dt) {
+        // Minecraft 1.12: 24000 ticks / 20 TPS = 1200 real seconds per day.
+        gameTime += dt;
+        weather.update(dt);
+
+        float rain = weather.getRainStrength();
+        if (rain <= 0.01f) {
+            rainSoundTimer = 0.0;
+            return;
+        }
+        rainSoundTimer -= dt;
+        if (rainSoundTimer <= 0.0) {
+            int bx = clampInt((int)Math.floor(x), 0, WORLD_X - 1);
+            int bz = clampInt((int)Math.floor(z), 0, WORLD_Z - 1);
+            int eyeY = clampInt((int)Math.floor(y + eyeHeight()), 0, WORLD_Y - 1);
+            boolean covered = false;
+            for (int yy = eyeY + 1; yy < WORLD_Y; yy++) {
+                if ((world[bx][yy][bz] & 255) != AIR) { covered = true; break; }
+            }
+            sound.playRain(covered, rain);
+            // The source clips are around two seconds long. Vanilla triggers
+            // WEATHER_RAIN periodically from addRainParticles rather than looping it.
+            rainSoundTimer = covered ? 3.6 : 1.8;
+        }
+    }
+
     void applyPassiveGravity(double dt) {
         if (flying || deathScreen) return;
         if (onGround) return;
@@ -1918,12 +2022,18 @@ public class MinecraftGL {
             return;
         }
 
+        // GuiContainer does not pause an integrated 1.12 world. Keep celestial
+        // time, weather fades, precipitation animation and rain audio running
+        // while inventory, crafting, chest, trade or chat screens are open.
+        tickWorldClocks(dt);
+
         ticksSinceLastSwing += dt * 20.0;
         if (sprintDisableTimer > 0.0) sprintDisableTimer = Math.max(0.0, sprintDisableTimer - dt);
 
         // CHEST OPEN - obsluga zamykania (ESC, E, klikniecia w sloty)
         if (chestOpen) {
             handleChestInput(left, right);
+            if (chestOpen) syncOpenChestInventory();
             applyPassiveGravity(dt);
             updateDrops(dt);
             updateAnimals(dt);
@@ -2272,9 +2382,6 @@ public class MinecraftGL {
             damageFlash -= dt * 2.5;
             if (damageFlash < 0) damageFlash = 0;
         }
-        // Minecraft 1.12: 24000 ticks / 20 TPS = 1200 real seconds per day.
-        gameTime += dt;
-        weather.update(dt);
         // Update damage numbers
         craft3dgl.ui.DamageNumbers.update(dt);
 
@@ -2386,28 +2493,20 @@ public class MinecraftGL {
                 // Minecraft#rightClickMouse only swings for a SUCCESS action
                 // result. A miss, failed placement and creative pick do not swing.
                 if (actionSucceeded) swingTimer = 1.0;
-                if (!actionSucceeded && hit.hit && gameMode == GAMEMODE_CREATIVE
-                        && !isInteractableBlock(hit.block)) {
-                    pickBlockToHand(hit.block);
-                }
+                // Vanilla pick-block is middle mouse only. Right-clicking with
+                // an empty creative hand must not create a block or play UI audio.
             }
         }
 
         // MIDDLE MOUSE BUTTON = pick block (jak w MC) - dziala w obu trybach
         boolean middle = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
-        if (middle && !middleMouseWasDown && hit.hit && !isInteractableBlock(hit.block)) {
+        if (middle && !middleMouseWasDown && hit.hit) {
             pickBlockToHand(hit.block);
         }
         middleMouseWasDown = middle;
 
         leftWasDown = left;
         rightWasDown = right;
-    }
-
-    /** Czy blok ma specjalna interakcje (drzwi, skrzynia, stol) ktora nie jest "wez do reki" */
-    boolean isInteractableBlock(int block) {
-        return block == CRAFTING_TABLE || block == CHEST
-            || block == DOOR_BOTTOM || block == DOOR_TOP;
     }
 
     /** Pick block (jak MMB w MC): daje 1 sztuke bloku do reki.
@@ -2426,7 +2525,6 @@ public class MinecraftGL {
             for (int i = 0; i < HOTBAR_SIZE; i++) {
                 if (invId[i] == itemForBlock && invCount[i] > 0) {
                     selectedSlot = i;
-                    sound.playClick();
                     return;
                 }
             }
@@ -2440,7 +2538,6 @@ public class MinecraftGL {
                     invCount[selectedSlot] = invCount[i];
                     invId[i] = tmpId;
                     invCount[i] = tmpCount;
-                    sound.playClick();
                     return;
                 }
             }
@@ -2465,13 +2562,11 @@ public class MinecraftGL {
                     invCount[selectedSlot] = 1;
                 }
             }
-            sound.playClick();
         } else {
             // SURVIVAL: tylko przesun do hotbara jezeli juz mamy
             for (int i = 0; i < HOTBAR_SIZE; i++) {
                 if (invId[i] == itemForBlock && invCount[i] > 0) {
                     selectedSlot = i;
-                    sound.playClick();
                     return;
                 }
             }
@@ -2483,7 +2578,6 @@ public class MinecraftGL {
                     invCount[selectedSlot] = invCount[i];
                     invId[i] = tmpId;
                     invCount[i] = tmpCount;
-                    sound.playClick();
                     return;
                 }
             }
@@ -2714,10 +2808,20 @@ public class MinecraftGL {
         int existing = world[px][py][pz] & 0xff;
         if (existing != AIR && existing != WATER) return false;
         if (blockIntersectsPlayer(px, py, pz)) return false;
+        if (item == CHEST && !canPlaceChestAt(px, py, pz)) return false;
         setBlock(px, py, pz, item);
         if (item == CHEST) {
-            // BlockChest#onBlockPlacedBy faces opposite the placing player.
-            setChestFacing(px, py, pz, (yawToFacing(yaw) + 2) & 3);
+            // BlockChest permits one horizontal neighbor, but never a triple
+            // chest. A joined pair shares one facing perpendicular to its axis.
+            int facing = (yawToFacing(yaw) + 2) & 3;
+            long neighbor = adjacentChestKey(px, py, pz);
+            if (neighbor != Long.MIN_VALUE) {
+                int nx = ChestStorage.unpackX(neighbor), nz = ChestStorage.unpackZ(neighbor);
+                if (nx != px) facing = facing == 2 ? 2 : 0;
+                else facing = facing == 3 ? 3 : 1;
+                setChestFacing(nx, py, nz, facing);
+            }
+            setChestFacing(px, py, pz, facing);
             // Rebuild both the chest section and (at a section boundary) the
             // support section immediately. This guarantees the supporting
             // block's top face is present before the inset 14/16 model appears.
@@ -2733,6 +2837,43 @@ public class MinecraftGL {
             if (invCount[selectedSlot] <= 0) { invId[selectedSlot] = 0; invCount[selectedSlot] = 0; }
         }
         return true;
+    }
+
+    /** BlockChest#canPlaceBlockAt: at most one neighbor and that neighbor is single. */
+    boolean canPlaceChestAt(int x, int y, int z) {
+        int neighbors = 0;
+        final int[] dx = {-1, 1, 0, 0};
+        final int[] dz = {0, 0, -1, 1};
+        for (int i = 0; i < 4; i++) {
+            int nx = x + dx[i], nz = z + dz[i];
+            if (!inWorld(nx, y, nz) || (world[nx][y][nz] & 255) != CHEST) continue;
+            neighbors++;
+            if (neighbors > 1 || chestHasNeighbor(nx, y, nz, x, z)) return false;
+        }
+        return true;
+    }
+
+    boolean chestHasNeighbor(int x, int y, int z, int exceptX, int exceptZ) {
+        final int[] dx = {-1, 1, 0, 0};
+        final int[] dz = {0, 0, -1, 1};
+        for (int i = 0; i < 4; i++) {
+            int nx = x + dx[i], nz = z + dz[i];
+            if (nx == exceptX && nz == exceptZ) continue;
+            if (inWorld(nx, y, nz) && (world[nx][y][nz] & 255) == CHEST) return true;
+        }
+        return false;
+    }
+
+    long adjacentChestKey(int x, int y, int z) {
+        final int[] dx = {-1, 1, 0, 0};
+        final int[] dz = {0, 0, -1, 1};
+        for (int i = 0; i < 4; i++) {
+            int nx = x + dx[i], nz = z + dz[i];
+            if (inWorld(nx, y, nz) && (world[nx][y][nz] & 255) == CHEST) {
+                return ChestStorage.packKey(nx, y, nz);
+            }
+        }
+        return Long.MIN_VALUE;
     }
 
     int selectedItemId() { return invId[selectedSlot]; }
@@ -2922,7 +3063,6 @@ public class MinecraftGL {
             } else if (kind == 1) {
                 quickMove(invId, invCount, idx, invId, invCount, 0, 9);
             }
-            sound.playClick();
             return;
         }
         clickStack(ids, cnts, idx, right);
@@ -2935,7 +3075,7 @@ public class MinecraftGL {
     }
 
     void clickStack(int[] ids, int[] counts, int idx, boolean right) {
-        sound.playClick();
+        // GuiContainer slot interaction has no ui.button.click sound in 1.12.
         if (!right) {
             if (cursorId == 0 || cursorCount <= 0) {
                 cursorId = ids[idx]; cursorCount = counts[idx]; ids[idx] = 0; counts[idx] = 0;
@@ -2980,7 +3120,6 @@ public class MinecraftGL {
             }
         }
         recalcCrafting();
-        sound.playPlace(id);
     }
 
     void spawnDrop(double dx, double dy, double dz, int id, int count) {
@@ -7085,8 +7224,36 @@ public class MinecraftGL {
     void openChest(int bx, int by, int bz) {
         chestOpen = true;
         chestOpenX = bx; chestOpenY = by; chestOpenZ = bz;
-        chestIdsAt(bx, by, bz);
-        chestCountsAt(bx, by, bz);
+        java.util.Arrays.fill(openChestIds, 0);
+        java.util.Arrays.fill(openChestCounts, 0);
+        long clickedKey = packChestKey(bx, by, bz);
+        long pairKey = adjacentChestKey(bx, by, bz);
+        // InventoryLargeChest has stable left/right halves regardless of which
+        // physical half the player activates. West/north comes first here.
+        openChestPrimaryKey = clickedKey;
+        openChestSecondaryKey = pairKey;
+        if (pairKey != Long.MIN_VALUE) {
+            int pairX = ChestStorage.unpackX(pairKey), pairZ = ChestStorage.unpackZ(pairKey);
+            if (pairX < bx || (pairX == bx && pairZ < bz)) {
+                openChestPrimaryKey = pairKey;
+                openChestSecondaryKey = clickedKey;
+            }
+        }
+        openChestSlots = pairKey == Long.MIN_VALUE ? CHEST_SIZE : CHEST_SIZE * 2;
+        int fx = ChestStorage.unpackX(openChestPrimaryKey);
+        int fy = ChestStorage.unpackY(openChestPrimaryKey);
+        int fz = ChestStorage.unpackZ(openChestPrimaryKey);
+        int[] firstIds = chestIdsAt(fx, fy, fz);
+        int[] firstCounts = chestCountsAt(fx, fy, fz);
+        System.arraycopy(firstIds, 0, openChestIds, 0, CHEST_SIZE);
+        System.arraycopy(firstCounts, 0, openChestCounts, 0, CHEST_SIZE);
+        if (openChestSecondaryKey != Long.MIN_VALUE) {
+            int sx = ChestStorage.unpackX(openChestSecondaryKey);
+            int sy = ChestStorage.unpackY(openChestSecondaryKey);
+            int sz = ChestStorage.unpackZ(openChestSecondaryKey);
+            System.arraycopy(chestIdsAt(sx, sy, sz), 0, openChestIds, CHEST_SIZE, CHEST_SIZE);
+            System.arraycopy(chestCountsAt(sx, sy, sz), 0, openChestCounts, CHEST_SIZE, CHEST_SIZE);
+        }
         mouseCaptured = false;
         firstMouse = true;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -7099,6 +7266,7 @@ public class MinecraftGL {
     }
 
     void closeChest() {
+        syncOpenChestInventory();
         chestOpen = false;
         if (cursorId > 0 && cursorCount > 0) {
             if (!addItem(cursorId, cursorCount)) spawnDrop(x, y + 1.2, z, cursorId, cursorCount);
@@ -7114,6 +7282,22 @@ public class MinecraftGL {
         sound.playChestClose();
     }
 
+    void syncOpenChestInventory() {
+        if (openChestPrimaryKey == Long.MIN_VALUE) return;
+        int px = ChestStorage.unpackX(openChestPrimaryKey);
+        int py = ChestStorage.unpackY(openChestPrimaryKey);
+        int pz = ChestStorage.unpackZ(openChestPrimaryKey);
+        System.arraycopy(openChestIds, 0, chestIdsAt(px, py, pz), 0, CHEST_SIZE);
+        System.arraycopy(openChestCounts, 0, chestCountsAt(px, py, pz), 0, CHEST_SIZE);
+        if (openChestSecondaryKey != Long.MIN_VALUE) {
+            int sx = ChestStorage.unpackX(openChestSecondaryKey);
+            int sy = ChestStorage.unpackY(openChestSecondaryKey);
+            int sz = ChestStorage.unpackZ(openChestSecondaryKey);
+            System.arraycopy(openChestIds, CHEST_SIZE, chestIdsAt(sx, sy, sz), 0, CHEST_SIZE);
+            System.arraycopy(openChestCounts, CHEST_SIZE, chestCountsAt(sx, sy, sz), 0, CHEST_SIZE);
+        }
+    }
+
     void handleChestInput(boolean left, boolean right) {
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
@@ -7125,12 +7309,13 @@ public class MinecraftGL {
         boolean shift = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
         // Same MCP 9.40 slot coordinates as ChestUIRenderer/ContainerChest.
         int slot = craft3dgl.ui.ChestUIRenderer.SLOT_PITCH;
+        int rows = openChestSlots / 9;
         int startX = craft3dgl.ui.ChestUIRenderer.startX(width);
-        int chestY = craft3dgl.ui.ChestUIRenderer.chestY(height);
-        int invY = craft3dgl.ui.ChestUIRenderer.invY(height);
-        int hotY = craft3dgl.ui.ChestUIRenderer.hotY(height);
-        int[] cIds = chestIdsAt(chestOpenX, chestOpenY, chestOpenZ);
-        int[] cCnts = chestCountsAt(chestOpenX, chestOpenY, chestOpenZ);
+        int chestY = craft3dgl.ui.ChestUIRenderer.chestY(height, rows);
+        int invY = craft3dgl.ui.ChestUIRenderer.invY(height, rows);
+        int hotY = craft3dgl.ui.ChestUIRenderer.hotY(height, rows);
+        int[] cIds = openChestIds;
+        int[] cCnts = openChestCounts;
 
         // PPM + drag = rozdzielanie po 1
         if (right && cursorId > 0 && cursorCount > 0) {
@@ -7159,8 +7344,7 @@ public class MinecraftGL {
 
         if (leftClick && shift && item > 0) {
             if (hoverKind == 0) quickMove(cIds, cCnts, hoverIdx, invId, invCount, 0, INVENTORY_SIZE);
-            else quickMove(invId, invCount, hoverIdx, cIds, cCnts, 0, CHEST_SIZE);
-            sound.playClick();
+            else quickMove(invId, invCount, hoverIdx, cIds, cCnts, 0, openChestSlots);
             return;
         }
 
@@ -7181,7 +7365,7 @@ public class MinecraftGL {
 
     int chestSlotAt(int mx, int my, int startX, int chestY, int slot, int invY, int hotY) {
         int size = craft3dgl.ui.ChestUIRenderer.SLOT_SIZE;
-        for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
+        for (int row = 0; row < openChestSlots / 9; row++) for (int col = 0; col < 9; col++) {
             int sx = startX + col * slot, sy = chestY + row * slot;
             if (inside(mx, my, sx, sy, size, size)) return row * 9 + col;
         }
@@ -7198,7 +7382,7 @@ public class MinecraftGL {
 
     int chestSlotKind(int mx, int my, int startX, int chestY, int slot, int invY, int hotY) {
         int size = craft3dgl.ui.ChestUIRenderer.SLOT_SIZE;
-        for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
+        for (int row = 0; row < openChestSlots / 9; row++) for (int col = 0; col < 9; col++) {
             int sx = startX + col * slot, sy = chestY + row * slot;
             if (inside(mx, my, sx, sy, size, size)) return 0;
         }
@@ -7268,13 +7452,11 @@ public class MinecraftGL {
     void drawChestUI() {
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
-        int[] cIds = chestIdsAt(chestOpenX, chestOpenY, chestOpenZ);
-        int[] cCnts = chestCountsAt(chestOpenX, chestOpenY, chestOpenZ);
         translationSys.setLanguage(language);
         craft3dgl.ui.ChestUIRenderer.draw(fontRenderer, this::drawStackIcon, translationSys,
                 width, height, (int)mxA[0], (int)myA[0],
-                cIds, cCnts, invId, invCount, selectedSlot,
-                cursorId, cursorCount);
+                openChestIds, openChestCounts, openChestSlots,
+                invId, invCount, selectedSlot, cursorId, cursorCount);
     }
 
     void drawChests() {
@@ -7302,15 +7484,24 @@ public class MinecraftGL {
         chatOpen = true;
         chatInput.setLength(0);
         if (withSlash) chatInput.append('/');
+        chatCursor = chatInput.length();
+        chatSelection = chatCursor;
+        chatScroll = 0;
+        sentHistoryCursor = sentChatHistory.size();
+        chatHistoryDraft = "";
+        resetChatCompletion();
         mouseCaptured = false;
         firstMouse = true;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
 
     void closeChat(boolean send) {
-        if (send) submitChat();
+        if (send) { submitChat(); return; }
         chatOpen = false;
         chatInput.setLength(0);
+        chatCursor = 0;
+        chatSelection = 0;
+        resetChatCompletion();
         mouseCaptured = true;
         firstMouse = true;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -7318,14 +7509,101 @@ public class MinecraftGL {
 
     void submitChat() {
         String text = chatInput.toString().trim();
+        if (!text.isEmpty() && (sentChatHistory.isEmpty()
+                || !text.equals(sentChatHistory.get(sentChatHistory.size() - 1)))) {
+            sentChatHistory.add(text);
+            if (sentChatHistory.size() > 100) sentChatHistory.remove(0);
+        }
         chatInput.setLength(0);
+        chatCursor = 0;
+        chatSelection = 0;
         chatOpen = false;
+        resetChatCompletion();
         mouseCaptured = true;
         firstMouse = true;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         if (text.isEmpty()) return;
         if (text.startsWith("/")) handleCommand(text);
         else addChatMessage("<Player> " + text);
+    }
+
+    void navigateChatHistory(int direction) {
+        int size = sentChatHistory.size();
+        if (size == 0) return;
+        if (sentHistoryCursor == size && direction < 0) chatHistoryDraft = chatInput.toString();
+        sentHistoryCursor = Math.max(0, Math.min(size, sentHistoryCursor + direction));
+        String value = sentHistoryCursor == size ? chatHistoryDraft : sentChatHistory.get(sentHistoryCursor);
+        chatInput.setLength(0);
+        chatInput.append(value);
+        chatCursor = chatInput.length();
+        chatSelection = chatCursor;
+        resetChatCompletion();
+    }
+
+    String selectedChatText() {
+        if (chatCursor == chatSelection) return "";
+        int from = Math.min(chatCursor, chatSelection);
+        int to = Math.max(chatCursor, chatSelection);
+        return chatInput.substring(from, to);
+    }
+
+    boolean deleteChatSelection() {
+        if (chatCursor == chatSelection) return false;
+        int from = Math.min(chatCursor, chatSelection);
+        int to = Math.max(chatCursor, chatSelection);
+        chatInput.delete(from, to);
+        chatCursor = from;
+        chatSelection = from;
+        resetChatCompletion();
+        return true;
+    }
+
+    void insertChatText(String text) {
+        String clean = text.replace('\n', ' ').replace('\r', ' ');
+        deleteChatSelection();
+        int room = 256 - chatInput.length();
+        if (room <= 0) return;
+        if (clean.length() > room) clean = clean.substring(0, room);
+        chatInput.insert(chatCursor, clean);
+        chatCursor += clean.length();
+        chatSelection = chatCursor;
+        resetChatCompletion();
+    }
+
+    void resetChatCompletion() {
+        chatCompletions = java.util.Collections.emptyList();
+        chatCompletionIndex = -1;
+    }
+
+    void completeChatInput() {
+        if (chatCompletions.isEmpty()) {
+            String original = chatInput.toString();
+            chatCompletions = craft3dgl.commands.ChatCommands.complete(original);
+            chatCompletionIndex = -1;
+            if (chatCompletions.size() > 1) {
+                String common = chatCompletions.get(0);
+                for (int i = 1; i < chatCompletions.size(); i++) {
+                    String candidate = chatCompletions.get(i);
+                    int n = 0, max = Math.min(common.length(), candidate.length());
+                    while (n < max && common.charAt(n) == candidate.charAt(n)) n++;
+                    common = common.substring(0, n);
+                }
+                if (common.length() > original.length()) {
+                    chatInput.setLength(0);
+                    chatInput.append(common);
+                    chatCursor = chatInput.length();
+                    chatSelection = chatCursor;
+                    return;
+                }
+            }
+        }
+        if (chatCompletions.isEmpty()) return;
+        chatCompletionIndex = (chatCompletionIndex + 1) % chatCompletions.size();
+        String value = chatCompletions.get(chatCompletionIndex);
+        chatInput.setLength(0);
+        chatInput.append(value);
+        chatCursor = chatInput.length();
+        chatSelection = chatCursor;
     }
 
     void addChatMessage(String msg) {
@@ -7415,7 +7693,7 @@ public class MinecraftGL {
     int[] creativeItemsForTab() {
         int[] all = CREATIVE_ITEMS;
         int[] blocks = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, CRAFTING_TABLE, DOOR_BOTTOM, CHEST, WATER, FARMLAND, TALL_GRASS};
-        int[] tools = {ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE, ITEM_SEEDS, ITEM_WHEAT};
+        int[] tools = {ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE};
         int[] food = {ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_BREAD, ITEM_WHEAT};
         int[] base = creativeTab == 1 ? blocks : creativeTab == 2 ? tools : creativeTab == 3 ? food : all;
         String q = creativeSearch.toString().trim().toLowerCase();
@@ -7450,7 +7728,7 @@ public class MinecraftGL {
                 int tx = craft3dgl.ui.CreativeUIRenderer.tabX(width, i);
                 if (inside(mx, my, tx, tabY, tabWSmall, tabHSmall)) {
                     creativeTab = i; creativeScroll = 0; creativeSearch.setLength(0);
-                    sound.playClick(); return;
+                    return;
                 }
             }
         }
@@ -7466,7 +7744,7 @@ public class MinecraftGL {
                 int sy = gridY + row * slot;
                 if (inside(mx, my, sx, sy, slot, slot)) {
                     cursorId = items[i]; cursorCount = maxStack(cursorId);
-                    sound.playClick(); return;
+                    return;
                 }
             }
         }
@@ -7486,7 +7764,7 @@ public class MinecraftGL {
             } else {
                 cursorId = 0; cursorCount = 0;
             }
-            sound.playClick(); return;
+            return;
         }
         // Kliki w hotbar
         if (left && !leftWasDown) {
@@ -7505,7 +7783,7 @@ public class MinecraftGL {
                         invId[col] = 0; invCount[col] = 0;
                     }
                     selectedSlot = col;
-                    sound.playClick(); return;
+                    return;
                 }
             }
         }
@@ -7574,34 +7852,81 @@ public class MinecraftGL {
 
     void drawChatUI() {
         long now = System.currentTimeMillis();
-        int y0 = height - 110;
+        final int fontScale = 2;
+        final int lineHeight = 9 * fontScale;
+        final int chatWidth = Math.min(width - 4, 320 * fontScale);
+        final int maxLines = chatOpen ? Math.max(10, (height - 48) / lineHeight) : 10;
+        int bottom = height - 40;
+        int newest = chatLog.size() - 1 - (chatOpen ? chatScroll : 0);
         int shown = 0;
-        for (int i = chatLog.size() - 1; i >= 0 && shown < 10; i--) {
-            ChatMessage m = chatLog.get(i);
-            long age = now - m.shownAt;
-            if (!chatOpen && age > 10000) continue;
+        for (int i = newest; i >= 0 && shown < maxLines; i--) {
+            ChatMessage message = chatLog.get(i);
+            long age = now - message.shownAt;
+            if (!chatOpen && age >= 10000L) continue;
             float alpha = 1f;
-            if (!chatOpen && age > 7000) alpha = (float)(1.0 - (age - 7000) / 3000.0);
+            if (!chatOpen) {
+                float remaining = 1f - age / 10000f;
+                remaining = Math.max(0f, Math.min(1f, remaining * 10f));
+                alpha = remaining * remaining;
+            }
+            int lineY = bottom - (shown + 1) * lineHeight;
             glDisable(GL_TEXTURE_2D);
-            int w = Math.min(width - 20, 24 + textWidth(m.text, 0.55f));
-            glColor4f(0, 0, 0, 0.45f * alpha);
-            quad(10, y0 - shown * 20, w, 18);
-            glColor4f(1, 1, 1, alpha);
-            drawText(m.text, 14, y0 - shown * 20 + 1, 0.55f);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0f, 0f, 0f, 0.5f * alpha);
+            quad(2, lineY, chatWidth, lineHeight);
+            fontRenderer.drawVanillaText(message.text, 4, lineY + fontScale, fontScale, alpha);
             shown++;
         }
+
         if (chatOpen) {
+            // GuiChat's GuiTextField: a simple translucent black strip at the
+            // bottom, no custom title, frame, prompt, or neon decoration.
+            int inputY = height - 24;
             glDisable(GL_TEXTURE_2D);
-            glColor4f(0, 0, 0, 0.75f);
-            quad(0, height - 30, width, 30);
-            glColor4f(0.7f, 0.7f, 0.7f, 1f);
-            glBegin(GL_LINES);
-            glVertex2i(0, height - 30); glVertex2i(width, height - 30);
-            glEnd();
-            String shown2 = chatInput.toString();
-            if ((now / 500) % 2 == 0) shown2 += "_";
-            drawText("> " + shown2, 8, height - 24, 0.62f);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0f, 0f, 0f, 0.5f);
+            quad(2, inputY, width - 4, 20);
+
+            int maxChars = Math.max(1, (width - 12) / (6 * fontScale));
+            int start = Math.max(0, chatCursor - maxChars + 1);
+            int end = Math.min(chatInput.length(), start + maxChars);
+            String visible = chatInput.substring(start, end);
+            int selectionFrom = Math.max(start, Math.min(chatCursor, chatSelection));
+            int selectionTo = Math.min(end, Math.max(chatCursor, chatSelection));
+            if (selectionTo > selectionFrom) {
+                int selectionX = 4 + craft3dgl.ui.FontRenderer.mcTextWidth(
+                        chatInput.substring(start, selectionFrom), fontScale);
+                int selectionW = craft3dgl.ui.FontRenderer.mcTextWidth(
+                        chatInput.substring(selectionFrom, selectionTo), fontScale);
+                glDisable(GL_TEXTURE_2D);
+                glColor4f(0.25f, 0.40f, 1f, 0.65f);
+                quad(selectionX, inputY + 1, selectionW, 17);
+            }
+            fontRenderer.drawVanillaText(visible, 4, inputY + 2, fontScale, 1f);
+            if ((now / 500L) % 2L == 0L) {
+                int cursorChars = Math.max(0, Math.min(chatCursor - start, visible.length()));
+                int cursorX = 4 + craft3dgl.ui.FontRenderer.mcTextWidth(
+                        visible.substring(0, cursorChars), fontScale);
+                fontRenderer.drawVanillaText("_", cursorX, inputY + 2, fontScale, 1f);
+            }
+
+            if (chatCompletions.size() > 1) {
+                StringBuilder options = new StringBuilder();
+                for (int i = 0; i < chatCompletions.size() && i < 8; i++) {
+                    if (i > 0) options.append("  ");
+                    options.append(chatCompletions.get(i));
+                }
+                int suggestionY = inputY - lineHeight;
+                glDisable(GL_TEXTURE_2D);
+                glColor4f(0f, 0f, 0f, 0.5f);
+                quad(2, suggestionY, chatWidth, lineHeight);
+                fontRenderer.drawVanillaText(options.toString(), 4, suggestionY + fontScale,
+                        fontScale, 1f);
+            }
         }
+        glColor4f(1f, 1f, 1f, 1f);
     }
 
     void drawParticles() {

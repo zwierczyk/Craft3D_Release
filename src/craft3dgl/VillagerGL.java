@@ -9,7 +9,7 @@ public final class VillagerGL {
     public double age;
     public double displayY;
     public boolean displayInit;
-    public int profession; // 0 farmer, 1 librarian, 2 toolsmith
+    public int profession; // 1.12 IDs: 0 farmer, 1 librarian, 2 priest, 3 smith, 4 butcher
     public float health = 20;
     /** EntityLivingBase combat state (MCP 9.40). */
     public double hurtResistantTime;

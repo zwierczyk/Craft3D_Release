@@ -78,6 +78,7 @@ final class SoundEngine {
         categoryVolume.put("animals", 1.0);
         categoryVolume.put("players", 1.0);
         categoryVolume.put("ambient", 1.0);
+        categoryVolume.put("weather", 1.0);
         categoryVolume.put("ui", 1.0);
     }
 
@@ -139,6 +140,11 @@ final class SoundEngine {
     void playChestOpen()       { playEvent("block.chest.open", "blocks", 0.5f, 0.9f + rnd.nextFloat() * 0.1f); }
     void playChestClose()      { playEvent("block.chest.close", "blocks", 0.5f, 0.9f + rnd.nextFloat() * 0.1f); }
     void playSplash()          { playEvent("entity.player.splash", "players", 1.0f, triangularPitch(0.4f, 1.0f)); }
+    void playRain(boolean above, float strength) {
+        float fade = Math.max(0f, Math.min(1f, strength));
+        playEvent(above ? "weather.rain.above" : "weather.rain", "weather",
+                (above ? 0.1f : 0.2f) * fade, above ? 0.5f : 1.0f);
+    }
 
     private float triangularPitch(float spread, float base) {
         return (rnd.nextFloat() - rnd.nextFloat()) * spread + base;
