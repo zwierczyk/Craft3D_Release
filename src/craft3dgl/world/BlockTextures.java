@@ -24,7 +24,12 @@ public final class BlockTextures {
         if (id == LEAVES) return 6;
         if (id == SAND) return 7;
         if (id == PLANKS) return 8;
-        if (id == CRAFTING_TABLE) return dir == 2 ? 9 : 10;
+        if (id == CRAFTING_TABLE) {
+            if (dir == 2) return 9;          // up
+            if (dir == 3) return 8;          // oak planks underneath
+            if (dir == 1 || dir == 5) return 22; // west/north fronts
+            return 10;                      // east/south sides
+        }
         if (id == WATER) return 11;
         if (id == DOOR_BOTTOM) return 12;
         if (id == DOOR_TOP) return 13;

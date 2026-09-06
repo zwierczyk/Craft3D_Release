@@ -40,9 +40,8 @@ public class LightmapTexture {
 
     public void update(float dayMult, float nightVisionBoost) {
         buffer.clear();
-        // LightEngine uses 0.15 at night; vanilla World.getSunBrightness uses 0.20.
-        float daylight = clamp((dayMult - 0.15f) / 0.85f);
-        float sunBrightness = 0.20f + daylight * 0.80f;
+        // dayMult is World.getSunBrightness (0.2 at night, 1.0 at noon).
+        float sunBrightness = clamp(dayMult);
         float skyMultiplier = sunBrightness * 0.95f + 0.05f;
         float nightVision = clamp(nightVisionBoost / 0.85f);
 

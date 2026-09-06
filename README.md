@@ -65,12 +65,12 @@ java -cp "Craft3D.jar:lib/*" craft3dgl.MinecraftGL
 
 ```
 Craft3D/
-├── Craft3D.jar              ← skompilowana gra (90 KB)
+├── Craft3D.jar              ← skompilowana gra
 ├── MANIFEST.MF              ← manifest z classpath
-├── lib/                     ← biblioteki LWJGL dla Windows/Linux/Mac (3 MB)
+├── lib/                     ← biblioteki LWJGL dla Windows/Linux/Mac
 ├── src/craft3dgl/           ← kod źródłowy
 ├── build/craft3dgl/         ← skompilowane klasy
-├── assets/sounds/           ← dźwięki (opcjonalne - generuje syntetyczne jeśli brak)
+├── assets/sounds/           ← oryginalne eventy i warianty dźwięków Minecraft 1.12
 ├── META-INF/                ← META-INF
 ├── start_windows.bat        ← Windows launcher
 ├── start_linux_mac.sh       ← Linux/Mac launcher
@@ -85,8 +85,8 @@ Craft3D/
 
 ## Świat
 
-- Rozmiar: 512 × 64 × 512 bloków
-- 4 biomy: Plains, Forest, Desert, Mountains
+- Rozmiar: 1024 × 64 × 1024 bloków
+- Biomy: Plains, Forest, Desert, Mountains, Ocean, Beach i River
 - Wioski (~25% szans w komórkach 80×80)
 - Rzeki, jeziora, symulacja wody
 - Save w `saves/<nazwa>/world.dat`
@@ -97,12 +97,14 @@ Kod źródłowy jest w `src/craft3dgl/`. Po edycji rekompiluj:
 
 **Windows:**
 ```cmd
-javac -encoding UTF-8 -cp "lib\*" -d build src\craft3dgl\*.java
+dir /s /b src\*.java > sources.txt
+javac -encoding UTF-8 -cp "lib\*" -d build @sources.txt
 jar cfm Craft3D.jar MANIFEST.MF -C build .
 ```
 
 **Linux/Mac:**
 ```bash
-javac -encoding UTF-8 -cp "lib/*" -d build src/craft3dgl/*.java
+find src -name '*.java' | sort > sources.txt
+javac -encoding UTF-8 -cp "lib/*" -d build @sources.txt
 jar cfm Craft3D.jar MANIFEST.MF -C build .
 ```

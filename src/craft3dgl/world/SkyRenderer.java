@@ -1,101 +1,264 @@
 package craft3dgl.world;
 
+import craft3dgl.save.AssetFinder;
+import org.lwjgl.BufferUtils;
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.nio.ByteBuffer;
+import java.util.Random;
+
 import static org.lwjgl.opengl.GL11.*;
 
-/**
- * Minecraft 1.12-style overworld sky/fog colours drawn behind the chunk passes.
- * dayFraction: 0..1 (0=polnoc, 0.25=wschod, 0.5=poludnie, 0.75=zachod).
- */
+/** Fixed-function port of Minecraft 1.12 RenderGlobal.renderSky. */
 public final class SkyRenderer {
+    private static int sunTexture;
+    private static int moonTexture;
+    private static int starList;
+
     private SkyRenderer() {}
 
-    /** Vanilla-overworld sky and fog colours, without a full-screen cinematic sunset tint. */
+    /** Sky RGB followed by fog RGB for a clear plains biome. */
     public static float[] getSkyColors(double dayFraction) {
-        float raw = LightEngine.skyDayMultiplier(dayFraction);
-        float daylight = clamp((raw - 0.15f) / 0.85f);
-        // World.getSkyColor and WorldProvider.getFogColor constants from MCP 9.40.
-        float skyFactor = daylight;
-        float topR = 0.50f * skyFactor;
-        float topG = 0.66275f * skyFactor;
-        float topB = 1.00f * skyFactor;
-        float horizonR = 0.7529412f * (daylight * 0.94f + 0.06f);
-        float horizonG = 0.84705883f * (daylight * 0.94f + 0.06f);
-        float horizonB = 1.0f * (daylight * 0.91f + 0.09f);
-        return new float[]{topR, topG, topB, horizonR, horizonG, horizonB};
+        float daylight = LightEngine.skyColorMultiplier(dayFraction);
+
+        // Biome.getSkyColorByTemp(0.8): HSV(0.6088889, 0.5266667, 1)
+        float skyR = (121.0f / 255.0f) * daylight;
+        float skyG = (167.0f / 255.0f) * daylight;
+        float skyB = daylight;
+
+        // WorldProvider.getFogColor, then EntityRenderer's render-distance blend.
+        float fogR = 0.7529412f * (daylight * 0.94f + 0.06f);
+        float fogG = 0.84705883f * (daylight * 0.94f + 0.06f);
+        float fogB = 1.0f * (daylight * 0.91f + 0.09f);
+        float distanceBlend = 1.0f - (float)Math.pow(0.25f + 0.75f * 5.0f / 32.0f, 0.25);
+        fogR += (skyR - fogR) * distanceBlend;
+        fogG += (skyG - fogG) * distanceBlend;
+        fogB += (skyB - fogB) * distanceBlend;
+        return new float[]{skyR, skyG, skyB, fogR, fogG, fogB};
     }
 
-    private static float clamp(float value) {
-        return Math.max(0.0f, Math.min(1.0f, value));
-    }
-
-    /** Rysuje gradientowe niebo. Wywolywac PRZED setupCamera(). */
+    /** Compatibility overload used by older callers/tests. */
     public static void drawSky(int screenWidth, int screenHeight, double pitch) {
-        drawSky(screenWidth, screenHeight, pitch, 0.5);
+        drawSky(0.0, pitch, 0.5);
     }
 
     public static void drawSky(int screenWidth, int screenHeight, double pitch, double dayFraction) {
-        float[] c = getSkyColors(dayFraction);
-        float topR = c[0], topG = c[1], topB = c[2];
-        float horR = c[3], horG = c[4], horB = c[5];
-
-        glMatrixMode(GL_PROJECTION);
-        glPushMatrix();
-        glLoadIdentity();
-        glOrtho(0, screenWidth, screenHeight, 0, -1, 1);
-        glMatrixMode(GL_MODELVIEW);
-        glPushMatrix();
-        glLoadIdentity();
-
-        glDisable(GL_DEPTH_TEST);
-        glDisable(GL_FOG);
-        glDisable(GL_TEXTURE_2D);
-        glShadeModel(GL_SMOOTH);
-
-        double horizonOffset = pitch * screenHeight * 0.35;
-        int horizonY = screenHeight / 2 + (int) horizonOffset;
-
-        // Ground pas dolny - zawsze troche ciemniejszy
-        float groundR = horR * 0.75f;
-        float groundG = horG * 0.80f;
-        float groundB = horB * 0.85f;
-
-        glBegin(GL_QUADS);
-        glColor3f(topR, topG, topB);
-        glVertex2i(0, 0);
-        glColor3f(topR, topG, topB);
-        glVertex2i(screenWidth, 0);
-        glColor3f(horR, horG, horB);
-        glVertex2i(screenWidth, horizonY);
-        glColor3f(horR, horG, horB);
-        glVertex2i(0, horizonY);
-        glEnd();
-
-        glBegin(GL_QUADS);
-        glColor3f(horR, horG, horB);
-        glVertex2i(0, horizonY);
-        glColor3f(horR, horG, horB);
-        glVertex2i(screenWidth, horizonY);
-        glColor3f(groundR, groundG, groundB);
-        glVertex2i(screenWidth, screenHeight);
-        glColor3f(groundR, groundG, groundB);
-        glVertex2i(0, screenHeight);
-        glEnd();
-
-        glShadeModel(GL_FLAT);
-        glEnable(GL_TEXTURE_2D);
-        glEnable(GL_FOG);
-        glEnable(GL_DEPTH_TEST);
-        glColor3f(1, 1, 1);
-
-        glMatrixMode(GL_PROJECTION);
-        glPopMatrix();
-        glMatrixMode(GL_MODELVIEW);
-        glPopMatrix();
+        drawSky(0.0, pitch, dayFraction);
     }
 
-    /** Zwraca aktualny kolor mgly zsynchronizowany z niebem (kolor horyzontu). */
+    /**
+     * Draws the vanilla sky planes, sunrise/sunset fan, textured sun/moon and
+     * deterministic 1.12 stars. Projection must already be configured.
+     */
+    public static void drawSky(double yaw, double pitch, double dayFraction) {
+        ensureTextures();
+        ensureStars();
+        float[] colors = getSkyColors(dayFraction);
+
+        glPushAttrib(GL_ALL_ATTRIB_BITS);
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+        // Same view orientation as MinecraftGL.lookAt, but without translation.
+        glRotated(-Math.toDegrees(pitch), 1.0, 0.0, 0.0);
+        glRotated(180.0 - Math.toDegrees(yaw), 0.0, 1.0, 0.0);
+
+        glUseProgramZero();
+        glDepthMask(false);
+        glDisable(GL_TEXTURE_2D);
+        glEnable(GL_FOG);
+        glDisable(GL_ALPHA_TEST);
+        glDisable(GL_BLEND);
+        glColor3f(colors[0], colors[1], colors[2]);
+        drawSkyPlane(16.0, false);
+        drawSkyPlane(-16.0, true);
+        glDisable(GL_FOG);
+
+        float[] sunrise = sunriseSunset(dayFraction);
+        if (sunrise != null) drawSunriseFan(sunrise, dayFraction);
+
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glColor4f(1f, 1f, 1f, 1f);
+        glPushMatrix();
+        glRotated(-90.0, 0.0, 1.0, 0.0);
+        glRotated(LightEngine.celestialAngle(dayFraction) * 360.0f, 1.0, 0.0, 0.0);
+        if (sunTexture != 0) {
+            glBindTexture(GL_TEXTURE_2D, sunTexture);
+            texturedCelestialQuad(30.0, 100.0, false, 0.0, 0.0, 1.0, 1.0);
+        }
+        if (moonTexture != 0) {
+            glBindTexture(GL_TEXTURE_2D, moonTexture);
+            int phase = ((int)Math.floor(dayFraction) % 8 + 8) % 8;
+            int column = phase % 4;
+            int row = phase / 4;
+            double u0 = column / 4.0, v0 = row / 2.0;
+            double u1 = (column + 1) / 4.0, v1 = (row + 1) / 2.0;
+            texturedCelestialQuad(20.0, -100.0, true, u0, v0, u1, v1);
+        }
+
+        glDisable(GL_TEXTURE_2D);
+        float star = LightEngine.starBrightness(dayFraction);
+        if (star > 0.0f && starList != 0) {
+            glColor4f(star, star, star, star);
+            glCallList(starList);
+        }
+        glPopMatrix();
+
+        glPopMatrix();
+        glPopAttrib();
+        glMatrixMode(GL_MODELVIEW);
+        glColor4f(1f, 1f, 1f, 1f);
+    }
+
+    private static void glUseProgramZero() {
+        try { org.lwjgl.opengl.GL20.glUseProgram(0); } catch (Throwable ignored) {}
+    }
+
+    private static void drawSkyPlane(double y, boolean reverse) {
+        glBegin(GL_QUADS);
+        for (int x = -384; x <= 384; x += 64) {
+            for (int z = -384; z <= 384; z += 64) {
+                double x0 = reverse ? x + 64 : x;
+                double x1 = reverse ? x : x + 64;
+                glVertex3d(x0, y, z);
+                glVertex3d(x1, y, z);
+                glVertex3d(x1, y, z + 64);
+                glVertex3d(x0, y, z + 64);
+            }
+        }
+        glEnd();
+    }
+
+    private static float[] sunriseSunset(double dayFraction) {
+        float angle = LightEngine.celestialAngle(dayFraction);
+        float cosine = (float)Math.cos(angle * Math.PI * 2.0);
+        if (cosine < -0.4f || cosine > 0.4f) return null;
+        float phase = cosine / 0.4f * 0.5f + 0.5f;
+        float alpha = 1.0f - (1.0f - (float)Math.sin(phase * Math.PI)) * 0.99f;
+        alpha *= alpha;
+        return new float[]{phase * 0.3f + 0.7f, phase * phase * 0.7f + 0.2f, 0.2f, alpha};
+    }
+
+    private static void drawSunriseFan(float[] color, double dayFraction) {
+        glDisable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glShadeModel(GL_SMOOTH);
+        glPushMatrix();
+        glRotated(90.0, 1.0, 0.0, 0.0);
+        float angle = LightEngine.celestialAngle(dayFraction);
+        if (Math.sin(angle * Math.PI * 2.0) < 0.0) glRotated(180.0, 0.0, 0.0, 1.0);
+        glRotated(90.0, 0.0, 0.0, 1.0);
+        glBegin(GL_TRIANGLE_FAN);
+        glColor4f(color[0], color[1], color[2], color[3]);
+        glVertex3d(0.0, 100.0, 0.0);
+        glColor4f(color[0], color[1], color[2], 0.0f);
+        for (int i = 0; i <= 16; i++) {
+            float a = i * ((float)Math.PI * 2.0f) / 16.0f;
+            float sin = (float)Math.sin(a);
+            float cos = (float)Math.cos(a);
+            glVertex3d(sin * 120.0f, cos * 120.0f, -cos * 40.0f * color[3]);
+        }
+        glEnd();
+        glPopMatrix();
+        glShadeModel(GL_FLAT);
+    }
+
+    private static void texturedCelestialQuad(double radius, double y, boolean reverse,
+                                               double u0, double v0, double u1, double v1) {
+        glBegin(GL_QUADS);
+        if (!reverse) {
+            glTexCoord2d(u0, v0); glVertex3d(-radius, y, -radius);
+            glTexCoord2d(u1, v0); glVertex3d(radius, y, -radius);
+            glTexCoord2d(u1, v1); glVertex3d(radius, y, radius);
+            glTexCoord2d(u0, v1); glVertex3d(-radius, y, radius);
+        } else {
+            glTexCoord2d(u1, v1); glVertex3d(-radius, y, radius);
+            glTexCoord2d(u0, v1); glVertex3d(radius, y, radius);
+            glTexCoord2d(u0, v0); glVertex3d(radius, y, -radius);
+            glTexCoord2d(u1, v0); glVertex3d(-radius, y, -radius);
+        }
+        glEnd();
+    }
+
+    private static void ensureStars() {
+        if (starList != 0) return;
+        starList = glGenLists(1);
+        glNewList(starList, GL_COMPILE);
+        Random random = new Random(10842L);
+        glBegin(GL_QUADS);
+        for (int i = 0; i < 1500; ++i) {
+            double x = random.nextFloat() * 2.0f - 1.0f;
+            double y = random.nextFloat() * 2.0f - 1.0f;
+            double z = random.nextFloat() * 2.0f - 1.0f;
+            double size = 0.15f + random.nextFloat() * 0.1f;
+            double length = x * x + y * y + z * z;
+            if (length >= 1.0 || length <= 0.01) continue;
+            length = 1.0 / Math.sqrt(length);
+            x *= length; y *= length; z *= length;
+            double cx = x * 100.0, cy = y * 100.0, cz = z * 100.0;
+            double azimuth = Math.atan2(x, z);
+            double sinA = Math.sin(azimuth), cosA = Math.cos(azimuth);
+            double polar = Math.atan2(Math.sqrt(x * x + z * z), y);
+            double sinP = Math.sin(polar), cosP = Math.cos(polar);
+            double roll = random.nextDouble() * Math.PI * 2.0;
+            double sinR = Math.sin(roll), cosR = Math.cos(roll);
+            for (int corner = 0; corner < 4; ++corner) {
+                double dx = ((corner & 2) - 1) * size;
+                double dy = (((corner + 1) & 2) - 1) * size;
+                double rx = dx * cosR - dy * sinR;
+                double ry = dy * cosR + dx * sinR;
+                double py = rx * sinP;
+                double pz = -rx * cosP;
+                double vx = pz * sinA - ry * cosA;
+                double vz = ry * sinA + pz * cosA;
+                glVertex3d(cx + vx, cy + py, cz + vz);
+            }
+        }
+        glEnd();
+        glEndList();
+    }
+
+    private static void ensureTextures() {
+        if (sunTexture == 0) sunTexture = loadTexture("sun.png");
+        if (moonTexture == 0) moonTexture = loadTexture("moon_phases.png");
+    }
+
+    private static int loadTexture(String name) {
+        try {
+            File dir = AssetFinder.findAssetDir("environment", SkyRenderer.class);
+            BufferedImage image = ImageIO.read(new File(dir, name));
+            if (image == null) return 0;
+            ByteBuffer pixels = BufferUtils.createByteBuffer(image.getWidth() * image.getHeight() * 4);
+            for (int y = 0; y < image.getHeight(); y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    int argb = image.getRGB(x, y);
+                    pixels.put((byte)(argb >> 16)).put((byte)(argb >> 8));
+                    pixels.put((byte)argb).put((byte)(argb >> 24));
+                }
+            }
+            pixels.flip();
+            int texture = glGenTextures();
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.getWidth(), image.getHeight(),
+                    0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+            return texture;
+        } catch (Throwable throwable) {
+            System.err.println("[SkyRenderer] Cannot load " + name + ": " + throwable.getMessage());
+            return 0;
+        }
+    }
+
     public static float[] getFogColor(double dayFraction) {
-        float[] c = getSkyColors(dayFraction);
-        return new float[]{c[3], c[4], c[5], 1f};
+        float[] colors = getSkyColors(dayFraction);
+        return new float[]{colors[3], colors[4], colors[5], 1f};
     }
 }

@@ -9,10 +9,10 @@ import org.lwjgl.opengl.GL11;
 import craft3dgl.save.AssetFinder;
 
 /**
- * MC-style animated water texture.
- *   water_still.png = 16x512 (32 klatki pionowo po 16x16)
- *   Klatka zmieniana co ~120ms (jak w MC).
- *   Kolor tekstury jest szary/bialy - tint niebieski nakladany przez shader/RenderSystem.
+ * Minecraft 1.12 animated water texture.
+ *   water_still.png = 16x512 (32 vertical 16x16 frames)
+ *   water_still.mcmeta uses frametime=2, therefore one frame per 100 ms.
+ *   The plains water BlockColors tint is applied by the fixed-function mesh.
  */
 public class WaterTexture {
     public static final int FRAMES = 32;

@@ -1,18 +1,75 @@
 package craft3dgl;
 
-import javax.sound.sampled.*;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.SourceDataLine;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Properties;
 import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
+/**
+ * Minecraft 1.12 sound-event player.
+ *
+ * The event/variant table comes from 1.12.2 sounds.json (see
+ * assets/sounds/events.properties). Assets are PCM WAV conversions of the
+ * original OGG files so the game needs no platform-specific Vorbis plug-in.
+ * Pitch is applied by software resampling and event/category volume is mixed
+ * into the PCM samples before Java Sound receives them.
+ */
 final class SoundEngine {
+    private static final float OUTPUT_RATE = 44100.0f;
+
+    private static final class Variant {
+        final String path;
+        final float volume;
+
+        Variant(String path, float volume) {
+            this.path = path;
+            this.volume = volume;
+        }
+    }
+
+    private static final class SoundData {
+        final byte[] pcm;
+        final float sampleRate;
+        final int channels;
+
+        SoundData(byte[] pcm, float sampleRate, int channels) {
+            this.pcm = pcm;
+            this.sampleRate = sampleRate;
+            this.channels = channels;
+        }
+    }
+
     volatile boolean enabled = true;
     volatile double masterVolume = 1.0;
-    final float sampleRate = 44100f;
     final Random rnd = new Random();
     File soundDir;
 
     final HashMap<String, Double> categoryVolume = new HashMap<>();
+    private final Map<String, Variant[]> events = new HashMap<>();
+    private final Map<String, SoundData> cache = new ConcurrentHashMap<>();
+    private final Set<String> warnedMissing = new HashSet<>();
+    private final ExecutorService players = Executors.newFixedThreadPool(8, new ThreadFactory() {
+        private int number;
+        public Thread newThread(Runnable task) {
+            Thread thread = new Thread(task, "minecraft-sound-" + (++number));
+            thread.setDaemon(true);
+            return thread;
+        }
+    });
 
     SoundEngine() {
         categoryVolume.put("music", 1.0);
@@ -25,149 +82,263 @@ final class SoundEngine {
     }
 
     double catVol(String cat) {
-        Double v = categoryVolume.get(cat);
-        return v == null ? 1.0 : v;
+        Double value = categoryVolume.get(cat);
+        return value == null ? 1.0 : value;
     }
 
-    void setCategoryVolume(String cat, double v) {
-        categoryVolume.put(cat, Math.max(0, Math.min(1, v)));
+    void setCategoryVolume(String cat, double value) {
+        categoryVolume.put(cat, Math.max(0, Math.min(1, value)));
     }
 
-    void setSoundDir(File dir) { soundDir = dir; }
+    void setSoundDir(File dir) {
+        soundDir = dir;
+        cache.clear();
+        loadEventTable();
+    }
 
-    void setVolume(double v) {
-        masterVolume = Math.max(0, Math.min(1, v));
+    void setVolume(double value) {
+        masterVolume = Math.max(0, Math.min(1, value));
         enabled = masterVolume > 0.001;
     }
 
-    int volumePercent() { return (int) Math.round(masterVolume * 100); }
+    int volumePercent() {
+        return (int) Math.round(masterVolume * 100);
+    }
 
-    double mix(String cat) { return masterVolume * catVol(cat); }
+    double mix(String category) {
+        return masterVolume * catVol(category);
+    }
 
-    void playClick()           { if (playFile("click.wav")) return; tone(760, 0.035, 0.16 * mix("ui"), 0); }
-    void playJump()            { if (playFile("jump.wav")) return; sweep(260, 520, 0.10, 0.22 * mix("players")); }
-    void playPlace(int block)  { if (playFile("place.wav")) return; noiseThump(block == 4 || block == 7 ? 150 : 110, 0.09, 0.24 * mix("blocks")); }
-    void playBreak(int block)  { if (playFile("break.wav")) return; noiseCrack(block == 3 ? 0.16 : 0.12, (block == 5 ? 0.14 : 0.28) * mix("blocks")); }
-    void playStep(int block)   { if (playFile("step.wav")) return; if (block == 0) block = 3; double vol = block == 5 ? 0.08 : 0.13; noiseThump(block == 6 ? 180 : 130, 0.055, vol * mix("players")); }
-    void playEat()             { if (playFile("eat.wav")) return; noiseThump(260, 0.12, 0.18 * mix("players")); tone(520, 0.04, 0.08 * mix("players"), 0); }
-    void playHurt()            { if (playFile("hurt.wav")) return; sweep(320, 120, 0.16, 0.22 * mix("players")); }
-    void playAttackWeak()      { if (playFile("attack_weak.wav")) return; noiseThump(105, 0.055, 0.09 * mix("players")); }
-    void playAttackStrong()    { if (playFile("attack_strong.wav")) return; noiseCrack(0.075, 0.17 * mix("players")); }
-    void playAttackKnockback() { if (playFile("attack_knockback.wav")) return; sweep(180, 95, 0.10, 0.17 * mix("players")); }
-    void playAttackCritical()  { if (playFile("attack_crit.wav")) return; sweep(520, 210, 0.09, 0.18 * mix("players")); }
-    void playAttackSweep()     { if (playFile("attack_sweep.wav")) return; sweep(150, 420, 0.12, 0.14 * mix("players")); }
-    void playAttackNoDamage()  { if (playFile("attack_nodamage.wav")) return; noiseThump(80, 0.045, 0.07 * mix("players")); }
-    void playAnimal()          { if (playFile("animal.wav")) return; sweep(180 + rnd.nextInt(80), 130 + rnd.nextInt(80), 0.11, 0.12 * mix("animals")); }
-    void playCow()             { if (playFile("cow.wav")) return; playAnimal(); }
-    void playPig()             { if (playFile("pig.wav")) return; playAnimal(); }
-    void playSheep()           { if (playFile("sheep.wav")) return; playAnimal(); }
-    void playXpPickup()        { if (playFile("experience_orb.wav")) return; if (playFile("xp.wav")) return; tone(1600, 0.05, 0.12 * mix("players"), 0); }
-    void playLevelUp()         { if (playFile("levelup.wav")) return; sweep(523, 1047, 0.5, 0.20 * mix("players")); }
-    void playDoorOpen()        { if (playFile("door_open.wav")) return; noiseThump(180, 0.15, 0.16 * mix("blocks")); }
-    void playDoorClose()       { if (playFile("door_close.wav")) return; noiseThump(100, 0.10, 0.20 * mix("blocks")); }
-    void playSplash()          { if (playFile("splash.wav")) return; noiseCrack(0.25, 0.14 * mix("players")); }
+    // SoundEvents and call-site volume/pitch values below mirror MCP 9.40.
+    void playClick()           { playEvent("ui.button.click", "ui", 1.0f, 1.0f); }
+    void playJump()            { /* Vanilla 1.12 has no separate jump sound. */ }
+    void playPlace(int block)  { playEvent(blockEvent(block, "place"), "blocks", 1.0f, 0.8f); }
+    void playBreak(int block)  { playEvent(blockEvent(block, "break"), "blocks", 1.0f, 0.8f); }
+    void playStep(int block)   { playEvent(blockEvent(block, "step"), "players", 0.15f, 1.0f); }
+    void playEat()             { playEvent("entity.generic.eat", "players", rnd.nextBoolean() ? 1.0f : 0.5f, triangularPitch(0.2f, 1.0f)); }
+    void playBurp()            { playEvent("entity.player.burp", "players", 0.5f, 0.9f + rnd.nextFloat() * 0.1f); }
+    void playHurt()            { playEvent("entity.player.hurt", "players", 1.0f, triangularPitch(0.2f, 1.0f)); }
+    void playAttackWeak()      { playEvent("entity.player.attack.weak", "players", 1.0f, 1.0f); }
+    void playAttackStrong()    { playEvent("entity.player.attack.strong", "players", 1.0f, 1.0f); }
+    void playAttackKnockback() { playEvent("entity.player.attack.knockback", "players", 1.0f, 1.0f); }
+    void playAttackCritical()  { playEvent("entity.player.attack.crit", "players", 1.0f, 1.0f); }
+    void playAttackSweep()     { playEvent("entity.player.attack.sweep", "players", 1.0f, 1.0f); }
+    void playAttackNoDamage()  { playEvent("entity.player.attack.nodamage", "players", 1.0f, 1.0f); }
+    void playAnimal()          { playCow(); }
+    void playCow()             { playEvent("entity.cow.hurt", "animals", 0.4f, triangularPitch(0.2f, 1.0f)); }
+    void playPig()             { playEvent("entity.pig.hurt", "animals", 1.0f, triangularPitch(0.2f, 1.0f)); }
+    void playSheep()           { playEvent("entity.sheep.hurt", "animals", 1.0f, triangularPitch(0.2f, 1.0f)); }
+    void playVillagerHurt()    { playEvent("entity.villager.hurt", "animals", 1.0f, triangularPitch(0.2f, 1.0f)); }
+    void playVillagerYes()     { playEvent("entity.villager.yes", "animals", 1.0f, triangularPitch(0.2f, 1.0f)); }
+    void playVillagerNo()      { playEvent("entity.villager.no", "animals", 1.0f, triangularPitch(0.2f, 1.0f)); }
+    void playXpPickup()        { playEvent("entity.experience_orb.pickup", "players", 0.1f, triangularPitch(0.35f, 0.9f)); }
+    void playLevelUp()         { playEvent("entity.player.levelup", "players", 0.75f, 1.0f); }
+    void playItemPickup()      { playEvent("entity.item.pickup", "players", 0.2f, (triangularPitch(0.7f, 1.0f)) * 2.0f); }
+    void playDoorOpen()        { playEvent("block.wooden_door.open", "blocks", 1.0f, 0.9f + rnd.nextFloat() * 0.1f); }
+    void playDoorClose()       { playEvent("block.wooden_door.close", "blocks", 1.0f, 0.9f + rnd.nextFloat() * 0.1f); }
+    void playChestOpen()       { playEvent("block.chest.open", "blocks", 0.5f, 0.9f + rnd.nextFloat() * 0.1f); }
+    void playChestClose()      { playEvent("block.chest.close", "blocks", 0.5f, 0.9f + rnd.nextFloat() * 0.1f); }
+    void playSplash()          { playEvent("entity.player.splash", "players", 1.0f, triangularPitch(0.4f, 1.0f)); }
 
-    boolean playFile(String name) {
-        if (!enabled || soundDir == null) return false;
-        File file = new File(soundDir, name);
-        if (!file.isFile()) return false;
-        Thread t = new Thread(() -> {
-            try {
-                AudioInputStream in = AudioSystem.getAudioInputStream(file);
-                Clip clip = AudioSystem.getClip();
-                clip.open(in);
-                clip.start();
-                Thread.sleep(Math.max(20, clip.getMicrosecondLength() / 1000));
-                clip.close();
-                in.close();
-            } catch (Exception ignored) {}
-        }, "voxel-wav");
-        t.setDaemon(true);
-        t.start();
+    private float triangularPitch(float spread, float base) {
+        return (rnd.nextFloat() - rnd.nextFloat()) * spread + base;
+    }
+
+    private String blockEvent(int block, String action) {
+        switch (block) {
+            case MinecraftGL.GRASS:
+            case MinecraftGL.LEAVES:
+            case MinecraftGL.TALL_GRASS:
+            case MinecraftGL.WHEAT_0:
+            case MinecraftGL.WHEAT_1:
+            case MinecraftGL.WHEAT_2:
+            case MinecraftGL.WHEAT_3:
+                return "block.grass." + action;       // SoundType.PLANT
+            case MinecraftGL.DIRT:
+            case MinecraftGL.FARMLAND:
+                return "block.gravel." + action;      // SoundType.GROUND
+            case MinecraftGL.SAND:
+                return "block.sand." + action;        // SoundType.SAND
+            case MinecraftGL.WOOD:
+            case MinecraftGL.PLANKS:
+            case MinecraftGL.CRAFTING_TABLE:
+            case MinecraftGL.DOOR_BOTTOM:
+            case MinecraftGL.DOOR_TOP:
+            case MinecraftGL.CHEST:
+                return "block.wood." + action;        // SoundType.WOOD
+            case MinecraftGL.WATER:
+                return "entity.player.splash";
+            default:
+                return "block.stone." + action;       // SoundType.STONE
+        }
+    }
+
+    private synchronized void loadEventTable() {
+        events.clear();
+        warnedMissing.clear();
+        if (soundDir == null) return;
+        File table = new File(soundDir, "events.properties");
+        if (!table.isFile()) {
+            System.err.println("[SoundEngine] Missing Minecraft 1.12 event table: " + table);
+            return;
+        }
+        Properties properties = new Properties();
+        try (InputStream input = new FileInputStream(table)) {
+            properties.load(input);
+            for (String event : properties.stringPropertyNames()) {
+                String[] entries = properties.getProperty(event).split(",");
+                ArrayList<Variant> variants = new ArrayList<>();
+                for (String entry : entries) {
+                    String value = entry.trim();
+                    if (value.isEmpty()) continue;
+                    int at = value.lastIndexOf('@');
+                    float volume = 1.0f;
+                    if (at >= 0) {
+                        volume = Float.parseFloat(value.substring(at + 1));
+                        value = value.substring(0, at);
+                    }
+                    variants.add(new Variant(value, volume));
+                }
+                events.put(event, variants.toArray(new Variant[variants.size()]));
+            }
+        } catch (Exception exception) {
+            System.err.println("[SoundEngine] Cannot load Minecraft 1.12 sounds: " + exception.getMessage());
+            events.clear();
+        }
+    }
+
+    private void playEvent(String event, String category, float volume, float pitch) {
+        if (!enabled || soundDir == null) return;
+        double mixed = mix(category) * volume;
+        if (mixed <= 0.001) return;
+        Variant[] variants = events.get(event);
+        if (variants == null || variants.length == 0) {
+            warnMissing(event);
+            return;
+        }
+        Variant variant = variants[rnd.nextInt(variants.length)];
+        File file = new File(soundDir, variant.path + ".wav");
+        if (!file.isFile()) {
+            warnMissing(file.getPath());
+            return;
+        }
+        final float outputVolume = (float) Math.max(0.0, Math.min(1.0, mixed * variant.volume));
+        final float outputPitch = Math.max(0.25f, Math.min(4.0f, pitch));
+        players.execute(() -> playPcm(file, outputVolume, outputPitch));
+    }
+
+    private synchronized void warnMissing(String name) {
+        if (warnedMissing.add(name)) {
+            System.err.println("[SoundEngine] Missing Minecraft 1.12 sound: " + name);
+        }
+    }
+
+    private void playPcm(File file, float volume, float pitch) {
+        try {
+            SoundData sound = cache.get(file.getPath());
+            if (sound == null) {
+                sound = readPcm(file);
+                if (sound == null) return;
+                cache.put(file.getPath(), sound);
+            }
+            byte[] output = resample(sound, volume, pitch);
+            AudioFormat format = new AudioFormat(OUTPUT_RATE, 16, sound.channels, true, false);
+            SourceDataLine line = AudioSystem.getSourceDataLine(format);
+            line.open(format, Math.min(output.length, 16384));
+            line.start();
+            line.write(output, 0, output.length);
+            line.drain();
+            line.close();
+        } catch (Exception exception) {
+            warnMissing(file.getPath() + " (playback: " + exception.getMessage() + ")");
+        }
+    }
+
+    private SoundData readPcm(File file) {
+        try (FileInputStream input = new FileInputStream(file);
+             ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                if (read > 0) bytes.write(buffer, 0, read);
+            }
+            byte[] wav = bytes.toByteArray();
+            if (wav.length < 44 || !tag(wav, 0, "RIFF") || !tag(wav, 8, "WAVE")) {
+                throw new IllegalArgumentException("not a PCM WAV file");
+            }
+            int channels = 0;
+            int sampleRate = 0;
+            int bits = 0;
+            int dataOffset = -1;
+            int dataLength = 0;
+            for (int offset = 12; offset + 8 <= wav.length; ) {
+                int size = little32(wav, offset + 4);
+                int start = offset + 8;
+                if (size < 0 || start + size > wav.length) break;
+                if (tag(wav, offset, "fmt ") && size >= 16) {
+                    if (little16(wav, start) != 1) throw new IllegalArgumentException("WAV is not PCM");
+                    channels = little16(wav, start + 2);
+                    sampleRate = little32(wav, start + 4);
+                    bits = little16(wav, start + 14);
+                } else if (tag(wav, offset, "data")) {
+                    dataOffset = start;
+                    dataLength = size;
+                }
+                offset = start + size + (size & 1);
+            }
+            if (channels < 1 || channels > 2 || sampleRate <= 0 || bits != 16 || dataOffset < 0) {
+                throw new IllegalArgumentException("unsupported WAV format");
+            }
+            byte[] pcm = new byte[dataLength];
+            System.arraycopy(wav, dataOffset, pcm, 0, dataLength);
+            return new SoundData(pcm, sampleRate, channels);
+        } catch (Exception exception) {
+            warnMissing(file.getPath() + " (decode: " + exception.getMessage() + ")");
+            return null;
+        }
+    }
+
+    private static boolean tag(byte[] bytes, int offset, String value) {
+        if (offset < 0 || offset + value.length() > bytes.length) return false;
+        for (int i = 0; i < value.length(); i++) {
+            if ((bytes[offset + i] & 255) != value.charAt(i)) return false;
+        }
         return true;
     }
 
-    void tone(double freq, double seconds, double volume, int waveform) {
-        if (!enabled) return;
-        int samples = Math.max(1, (int) (sampleRate * seconds));
-        byte[] data = new byte[samples * 2];
-        for (int i = 0; i < samples; i++) {
-            double t = i / sampleRate;
-            double env = 1.0 - (double) i / samples;
-            double s = Math.sin(2 * Math.PI * freq * t);
-            if (waveform == 1) s = s > 0 ? 1 : -1;
-            write16(data, i, s * env * volume);
+    private static int little16(byte[] bytes, int offset) {
+        return (bytes[offset] & 255) | ((bytes[offset + 1] & 255) << 8);
+    }
+
+    private static int little32(byte[] bytes, int offset) {
+        return (bytes[offset] & 255) | ((bytes[offset + 1] & 255) << 8)
+                | ((bytes[offset + 2] & 255) << 16) | ((bytes[offset + 3] & 255) << 24);
+    }
+
+    private byte[] resample(SoundData sound, float volume, float pitch) {
+        int sourceFrames = sound.pcm.length / (sound.channels * 2);
+        double sourceStep = sound.sampleRate * pitch / OUTPUT_RATE;
+        int outputFrames = Math.max(1, (int) Math.ceil(sourceFrames / sourceStep));
+        byte[] output = new byte[outputFrames * sound.channels * 2];
+        for (int frame = 0; frame < outputFrames; frame++) {
+            double sourcePosition = frame * sourceStep;
+            int first = Math.min(sourceFrames - 1, (int) sourcePosition);
+            int second = Math.min(sourceFrames - 1, first + 1);
+            double fraction = sourcePosition - first;
+            for (int channel = 0; channel < sound.channels; channel++) {
+                int a = sample16(sound.pcm, (first * sound.channels + channel) * 2);
+                int b = sample16(sound.pcm, (second * sound.channels + channel) * 2);
+                int sample = (int) Math.round((a + (b - a) * fraction) * volume);
+                sample = Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, sample));
+                int offset = (frame * sound.channels + channel) * 2;
+                output[offset] = (byte) (sample & 255);
+                output[offset + 1] = (byte) ((sample >>> 8) & 255);
+            }
         }
-        play(data);
+        return output;
     }
 
-    void sweep(double start, double end, double seconds, double volume) {
-        if (!enabled) return;
-        int samples = Math.max(1, (int) (sampleRate * seconds));
-        byte[] data = new byte[samples * 2];
-        double phase = 0;
-        for (int i = 0; i < samples; i++) {
-            double a = (double) i / samples;
-            double freq = start + (end - start) * a;
-            phase += 2 * Math.PI * freq / sampleRate;
-            double env = Math.sin(Math.PI * a) * (1.0 - a * 0.25);
-            write16(data, i, Math.sin(phase) * env * volume);
-        }
-        play(data);
-    }
-
-    void noiseThump(double baseFreq, double seconds, double volume) {
-        if (!enabled) return;
-        int samples = Math.max(1, (int) (sampleRate * seconds));
-        byte[] data = new byte[samples * 2];
-        double phase = 0, last = 0;
-        for (int i = 0; i < samples; i++) {
-            double a = (double) i / samples;
-            phase += 2 * Math.PI * (baseFreq * (1.0 - a * 0.35)) / sampleRate;
-            last = last * 0.55 + (rnd.nextDouble() * 2 - 1) * 0.45;
-            double env = Math.pow(1.0 - a, 1.8);
-            write16(data, i, (Math.sin(phase) * 0.42 + last * 0.58) * env * volume);
-        }
-        play(data);
-    }
-
-    void noiseCrack(double seconds, double volume) {
-        if (!enabled) return;
-        int samples = Math.max(1, (int) (sampleRate * seconds));
-        byte[] data = new byte[samples * 2];
-        double last = 0;
-        for (int i = 0; i < samples; i++) {
-            double a = (double) i / samples;
-            double env = Math.pow(1.0 - a, 2.2);
-            double n = rnd.nextDouble() * 2 - 1;
-            last = last * 0.25 + n * 0.75;
-            if ((i % 700) < 60) last += (rnd.nextDouble() * 2 - 1) * 0.8;
-            write16(data, i, last * env * volume);
-        }
-        play(data);
-    }
-
-    void write16(byte[] data, int sample, double value) {
-        value = Math.max(-1, Math.min(1, value));
-        short v = (short) (value * 32767);
-        data[sample * 2] = (byte) (v & 255);
-        data[sample * 2 + 1] = (byte) ((v >> 8) & 255);
-    }
-
-    void play(byte[] data) {
-        if (!enabled) return;
-        Thread t = new Thread(() -> {
-            try {
-                AudioFormat format = new AudioFormat(sampleRate, 16, 1, true, false);
-                SourceDataLine line = AudioSystem.getSourceDataLine(format);
-                line.open(format, data.length);
-                line.start();
-                line.write(data, 0, data.length);
-                line.drain();
-                line.close();
-            } catch (Exception ignored) {}
-        }, "voxel-sound");
-        t.setDaemon(true);
-        t.start();
+    private static int sample16(byte[] data, int offset) {
+        return (short) ((data[offset] & 255) | (data[offset + 1] << 8));
     }
 }

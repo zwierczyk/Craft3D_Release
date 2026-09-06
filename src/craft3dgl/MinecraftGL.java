@@ -136,6 +136,7 @@ public class MinecraftGL {
     craft3dgl.world.LightEngine lightEngine;
     /** Aktualny mnoznik dla sky light zsynchronizowany z dayFraction. */
     float currentDayMult = 1.0f;
+    boolean buildingTerrainMesh = false;
     /** Night vision effect - do kiedy aktywny (System.currentTimeMillis()). 0 = nieaktywny. */
     long nightVisionExpireMs = 0L;
 
@@ -183,6 +184,7 @@ public class MinecraftGL {
     boolean sneaking = false;
     int eatingItemId = 0;
     double eatingProgress = 0;
+    int eatingSoundStep = 0;
     int health = 20;
     int maxHealth = 20;
     int hunger = 20;
@@ -233,7 +235,6 @@ public class MinecraftGL {
     boolean mWasDown = false;
     boolean escWasDown = false;
     boolean f5WasDown = false;
-    boolean f7WasDown = false;
     boolean f9WasDown = false;
     boolean f10WasDown = false;
     boolean f12WasDown = false;
@@ -270,11 +271,12 @@ public class MinecraftGL {
     static float foodTuneRotZ = 56.0f;    // -304 mod 360
     static float foodTuneScale = 0.400f;
     long lastTuneLogTime = 0;
-    /** Etap 6+ - modern MC-style renderer (RenderType + core shadery). F7 toggle. */
-    // Minecraft 1.12 has no JSON core-shader terrain pipeline. Its default is
-    // fixed-function multitexturing (atlas * 16x16 lightmap); F7 keeps the later
-    // shader experiment available only as a comparison/debug path.
-    static boolean USE_MODERN_RENDERER = false;
+    /**
+     * Minecraft 1.12 has no JSON core-shader terrain pipeline. Keep the later
+     * experiment compiled for source compatibility, but never select it for
+     * gameplay: the MCP fixed-function atlas/lightmap path is authoritative.
+     */
+    static final boolean USE_MODERN_RENDERER = false;
     /** GameRenderer - laduje core shadery raz na start. */
     final craft3dgl.blaze3d.renderer.GameRenderer gameRenderer = craft3dgl.blaze3d.renderer.GameRenderer.getInstance();
     boolean menuMouseWasDown = false;
@@ -547,12 +549,14 @@ public class MinecraftGL {
         glAlphaFunc(GL_GREATER, 0.08f);
         glShadeModel(GL_FLAT);
         glDisable(GL_CULL_FACE);
-        // Ladny niebieski z odcieniem cyjanu (jak wieczorne niebo)
-        glClearColor(0.48f, 0.72f, 0.98f, 1.0f);
+        glClearColor(0.7529412f, 0.84705883f, 1.0f, 1.0f);
         glEnable(GL_FOG);
-        glFogi(GL_FOG_MODE, GL_EXP2);  // Wykladniczy fog (piekniej niz linear)
-        glFogf(GL_FOG_DENSITY, 0.013f); // Delikatny
-        FloatBuffer fogColor = BufferUtils.createFloatBuffer(4).put(new float[]{0.65f, 0.82f, 1.00f, 1f});
+        // EntityRenderer.setupFog: linear fog from 80% to 100% of the
+        // five-chunk render distance.
+        glFogi(GL_FOG_MODE, GL_LINEAR);
+        glFogf(GL_FOG_START, 64.0f);
+        glFogf(GL_FOG_END, 80.0f);
+        FloatBuffer fogColor = BufferUtils.createFloatBuffer(4).put(new float[]{0.7529412f, 0.84705883f, 1.0f, 1f});
         fogColor.flip();
         glFogfv(GL_FOG_COLOR, fogColor);
         // Fog hint - jakosc
@@ -567,7 +571,7 @@ public class MinecraftGL {
         craft3dgl.ui.ToolTextures.load();
         craft3dgl.ui.ToolMeshBuilder.load();
         craft3dgl.ui.GuiTextures.load();
-        // Etap 6: laduj core shadery MC-style (position, position_tex, rendertype_solid itd)
+        // Minecraft 1.12 dynamic 16x16 fixed-function lightmap.
         try {
             gameRenderer.init();
         } catch (Throwable t) {
@@ -1304,7 +1308,7 @@ public class MinecraftGL {
         deathScreen = false; deathDropsDone = false; paused = false;
         villagerTradeOpen = false; tradingVillager = null; pauseScreen = 0;
         miningHit = null; miningProgress = 0; sneaking = false;
-        eatingItemId = 0; eatingProgress = 0;
+        eatingItemId = 0; eatingProgress = 0; eatingSoundStep = 0;
         waterSim.clear();
         for (int cx = 0; cx < CHUNKS_X; cx++) for (int cz = 0; cz < CHUNKS_Z; cz++) generatedColumns[cx][cz] = false;
         gameMode = GAMEMODE_SURVIVAL; flying = false;
@@ -1730,16 +1734,8 @@ public class MinecraftGL {
 
         if (f5Key && !f5WasDown) { cameraMode = (cameraMode + 1) % 3; sound.playClick(); }
         f5WasDown = f5Key;
-        // Non-vanilla full-screen post-processing is intentionally unavailable.
-        // F7 - toggle modern MC-style renderer (Etap 6+)
-        boolean f7Key = glfwGetKey(window, GLFW_KEY_F7) == GLFW_PRESS;
-        if (f7Key && !f7WasDown) {
-            USE_MODERN_RENDERER = !USE_MODERN_RENDERER;
-            System.out.println("[F7] USE_MODERN_RENDERER=" + USE_MODERN_RENDERER
-                + " gameRenderer.initialized=" + gameRenderer.isInitialized());
-            sound.playClick();
-        }
-        f7WasDown = f7Key;
+        // Non-vanilla full-screen post-processing and the later JSON terrain
+        // experiment are intentionally unavailable in the MCP 9.40 path.
         // F9 - toggle TOOL tuning mode (miecze/kilofy/siekiery/motyki)
         boolean f9Key = glfwGetKey(window, GLFW_KEY_F9) == GLFW_PRESS;
         if (f9Key && !f9WasDown) {
@@ -1895,6 +1891,7 @@ public class MinecraftGL {
         boolean inWater = playerTouchingWater();
         boolean enteredWater = inWater && !wasInWater;
         wasInWater = inWater;
+        if (enteredWater) sound.playSplash();
         boolean ctrlDownH = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
         boolean shiftDownH = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
         // A player cannot stand up while a low ceiling occupies the standing hitbox.
@@ -2751,7 +2748,7 @@ public class MinecraftGL {
                 d.vy = 0;
             }
             double dist = Math.sqrt((d.x - x) * (d.x - x) + (d.y - (y + 1.0)) * (d.y - (y + 1.0)) + (d.z - z) * (d.z - z));
-            if (d.age > 0.75 && dist < 1.35 && addItem(d.id, d.count)) { sound.playClick(); it.remove(); }
+            if (d.age > 0.75 && dist < 1.35 && addItem(d.id, d.count)) { sound.playItemPickup(); it.remove(); }
             else if (d.age > 240) it.remove();
         }
     }
@@ -2866,6 +2863,7 @@ public class MinecraftGL {
         if (!craft3dgl.combat.DamageSystem.isFood(id) || hunger >= 20) return false;
         eatingItemId = id;
         eatingProgress = 0;
+        eatingSoundStep = 0;
         return true;
     }
 
@@ -2875,18 +2873,28 @@ public class MinecraftGL {
         if (!rightHeld || selectedItemId() != eatingItemId || selectedItemCount() <= 0 || hunger >= 20) {
             eatingItemId = 0;
             eatingProgress = 0;
+            eatingSoundStep = 0;
             return;
         }
         eatingProgress += dt;
+        // EntityLivingBase.updateActiveHand: while 25 ticks or fewer remain,
+        // emit an eat event every four ticks (0.2 s).
+        int soundsDue = Math.max(0, Math.min(6, (int)Math.floor((eatingProgress - 0.2) / 0.2)));
+        while (eatingSoundStep < soundsDue) {
+            sound.playEat();
+            eatingSoundStep++;
+        }
         if (eatingProgress < 1.6) return;
         int food = craft3dgl.combat.DamageSystem.foodValue(eatingItemId);
         hunger = Math.min(20, hunger + food);
         sound.playEat();
+        sound.playBurp();
         regenTimer = 0;
         invCount[selectedSlot]--;
         if (invCount[selectedSlot] <= 0) { invId[selectedSlot] = 0; invCount[selectedSlot] = 0; }
         eatingItemId = 0;
         eatingProgress = 0;
+        eatingSoundStep = 0;
     }
 
     // ====== VILLAGER LOGIKA ======
@@ -3063,7 +3071,7 @@ public class MinecraftGL {
         if (damage.newHurt) {
             villager.hurtTime = craft3dgl.combat.DamageSystem.HURT_FLASH_SECONDS;
             knockBackVillager(villager, 0.4f);
-            sound.playHurt();
+            sound.playVillagerHurt();
         }
         if (attack.sprintKnockback) {
             knockBackVillager(villager, 0.5f);
@@ -3151,7 +3159,7 @@ public class MinecraftGL {
             if (result.newHurt) {
                 villager.hurtTime = craft3dgl.combat.DamageSystem.HURT_FLASH_SECONDS;
                 knockBackVillager(villager, 0.4f);
-                sound.playHurt();
+                sound.playVillagerHurt();
             }
             spawnEntityHitHearts(villager.x, villager.y, villager.z,
                     craft3dgl.entities.EntityConstants.VILLAGER_RADIUS * 2.0,
@@ -3240,14 +3248,17 @@ public class MinecraftGL {
     }
 
     void doVillagerTrade(int trade) {
+        boolean success = false;
         if (trade == 0) {
-            if (removeItems(WOOD, 8)) { addItem(ITEM_EMERALD, 1); sound.playClick(); }
+            if (removeItems(WOOD, 8)) { addItem(ITEM_EMERALD, 1); success = true; }
         } else if (trade == 1) {
-            if (removeItems(ITEM_EMERALD, 1)) { addItem(ITEM_BREAD, 3); sound.playClick(); }
+            if (removeItems(ITEM_EMERALD, 1)) { addItem(ITEM_BREAD, 3); success = true; }
         } else if (trade == 2) {
             // Pszenica -> szmaragd (20 wheat = 1 emerald, dobra cena dla rolnika)
-            if (removeItems(ITEM_WHEAT, 20)) { addItem(ITEM_EMERALD, 1); sound.playClick(); }
+            if (removeItems(ITEM_WHEAT, 20)) { addItem(ITEM_EMERALD, 1); success = true; }
         }
+        if (success) sound.playVillagerYes();
+        else sound.playVillagerNo();
     }
 
     int countItem(int id) { int c = 0; for (int i = 0; i < INVENTORY_SIZE; i++) if (invId[i] == id) c += invCount[i]; return c; }
@@ -3930,29 +3941,31 @@ public class MinecraftGL {
     }
 
     void render() {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        // Vanilla-style overworld sky behind the 3D passes.
-        double dayFraction = (gameTime / 240.0) % 1.0;
+        double dayTime = gameTime / 240.0;
+        double dayFraction = dayTime % 1.0;
         currentDayMult = craft3dgl.world.LightEngine.skyDayMultiplier(dayFraction);
-        craft3dgl.world.SkyRenderer.drawSky(width, height, pitch, dayFraction);
-        // Slonce/ksiezyc/gwiazdy w skyboxie
-        craft3dgl.world.CelestialRenderer.draw(width, height, yaw, pitch, dayFraction);
-        // Aktualizuj kolor mgly + clear color pod aktualny stan dnia
         float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(dayFraction);
-        // UNDERWATER FOG - gdy kamera pod woda, ciemnoniebieski gesty fog
         boolean camUnderwater = isWaterAt(x, y + eyeHeight(), z);
         if (camUnderwater) {
-            fogC = new float[]{0.05f, 0.15f, 0.35f, 1.0f};   // ciemnoniebieski
-            glFogf(GL_FOG_DENSITY, 0.08f);                    // gesty
+            // EntityRenderer.updateFogColor/setupFog for Material.WATER.
+            fogC = new float[]{0.02f, 0.02f, 0.20f, 1.0f};
+            glFogi(GL_FOG_MODE, GL_EXP);
+            glFogf(GL_FOG_DENSITY, 0.10f);
         } else {
-            glFogf(GL_FOG_DENSITY, 0.013f);                   // normalny
+            // Vanilla 1.12 uses linear terrain fog, not the custom EXP2 fog.
+            glFogi(GL_FOG_MODE, GL_LINEAR);
+            glFogf(GL_FOG_START, 64.0f);
+            glFogf(GL_FOG_END, 80.0f);
         }
         java.nio.FloatBuffer fbC = org.lwjgl.BufferUtils.createFloatBuffer(4).put(fogC); fbC.flip();
         glFogfv(GL_FOG_COLOR, fbC);
         glClearColor(fogC[0], fogC[1], fogC[2], 1f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
         setupProjection();
+        craft3dgl.world.SkyRenderer.drawSky(yaw, pitch, dayTime);
         setupCamera();
-        drawClouds();
+        drawClouds(dayFraction);
         glBindTexture(GL_TEXTURE_2D, textureAtlas);
 
         // Minecraft 1.12 render order: opaque/cutout terrain, entities, translucent
@@ -3960,10 +3973,13 @@ public class MinecraftGL {
         if (gameRenderer.getLightmapTexture() != null) {
             gameRenderer.getLightmapTexture().update(currentDayMult, hasNightVision() ? 0.90f : 0f);
         }
+        if (gameRenderer.getWaterTexture() != null) gameRenderer.getWaterTexture().update();
         if (USE_MODERN_RENDERER) drawModernChunks(false);
         else drawChunks(false);
+        // Doors are CUTOUT geometry and belong before entities/translucency.
+        drawDoors();
 
-        // Tile entities are rendered after the opaque block layer in 1.12.
+        // Tile entities are rendered after the opaque/cutout block layer in 1.12.
         drawChests();
         drawDroppedItems3D();
         drawAnimals();
@@ -3976,7 +3992,6 @@ public class MinecraftGL {
             glColor4f(1,1,1,1);
         }
         if (!USE_MODERN_RENDERER) drawChunks(true);
-        drawDoors();
         if (USE_MODERN_RENDERER) drawModernChunks(true);
         drawParticles();
 
@@ -4082,24 +4097,48 @@ public class MinecraftGL {
         int range = 5;
         enableFixedFunctionLightmap();
         if (leaves) {
+            int waterTexture = gameRenderer.getWaterTexId();
+            if (waterTexture > 0) glBindTexture(GL_TEXTURE_2D, waterTexture);
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glDepthMask(false);
         }
         // Wlacz smooth shading dla AO na krawedziach blokow (a/b/c/d w face())
         glShadeModel(GL_SMOOTH);
-        for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range); cx++) {
-            for (int cy = 0; cy < CHUNKS_Y; cy++) {
-                for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range); cz++) {
-                    Chunk c = chunks[cx][cy][cz];
-                    int list = leaves ? c.leavesList : c.terrainList;
-                    if (list != 0) glCallList(list);
+        if (leaves) {
+            // Render translucent water chunks back-to-front as RenderGlobal's
+            // TRANSLUCENT pass does; the previous fixed iteration caused blend
+            // order seams whenever several water surfaces overlapped.
+            java.util.ArrayList<int[]> order = new java.util.ArrayList<>();
+            for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range); cx++) {
+                for (int cy = 0; cy < CHUNKS_Y; cy++) {
+                    for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range); cz++) {
+                        if (chunks[cx][cy][cz].leavesList != 0) order.add(new int[]{cx, cy, cz});
+                    }
+                }
+            }
+            order.sort((a, b) -> Double.compare(chunkDistanceSq(b), chunkDistanceSq(a)));
+            for (int[] pos : order) glCallList(chunks[pos[0]][pos[1]][pos[2]].leavesList);
+        } else {
+            for (int cx = Math.max(0, pcx - range); cx <= Math.min(CHUNKS_X - 1, pcx + range); cx++) {
+                for (int cy = 0; cy < CHUNKS_Y; cy++) {
+                    for (int cz = Math.max(0, pcz - range); cz <= Math.min(CHUNKS_Z - 1, pcz + range); cz++) {
+                        int list = chunks[cx][cy][cz].terrainList;
+                        if (list != 0) glCallList(list);
+                    }
                 }
             }
         }
         glShadeModel(GL_FLAT);
         if (leaves) { glDepthMask(true); glDisable(GL_BLEND); }
         disableFixedFunctionLightmap();
+    }
+
+    double chunkDistanceSq(int[] pos) {
+        double dx = (pos[0] + 0.5) * CHUNK - x;
+        double dy = (pos[1] + 0.5) * CHUNK - (y + eyeHeight());
+        double dz = (pos[2] + 0.5) * CHUNK - z;
+        return dx * dx + dy * dy + dz * dz;
     }
 
     /** EntityRenderer.enableLightmap/disableLightmap from MCP 9.40. */
@@ -4146,8 +4185,8 @@ public class MinecraftGL {
         org.lwjgl.opengl.GL13.glMultiTexCoord2f(org.lwjgl.opengl.GL13.GL_TEXTURE1, lightX, lightY);
     }
 
-    void drawClouds() {
-        CloudRenderer.drawClouds(x, z);
+    void drawClouds(double dayFraction) {
+        CloudRenderer.drawClouds(x, z, dayFraction);
     }
 
     void drawDroppedItems3D() { craft3dgl.entities.DroppedItemRenderer.drawAll(drops, textureAtlas, this::face); }
@@ -6139,6 +6178,7 @@ public class MinecraftGL {
     }
 
     void compileChunkList(int cx, int cy, int cz, int list, boolean leaves) {
+        buildingTerrainMesh = true;
         glNewList(list, GL_COMPILE);
         glBindTexture(GL_TEXTURE_2D, textureAtlas);
         int minX = cx * CHUNK, minY = cy * CHUNK, minZ = cz * CHUNK;
@@ -6150,10 +6190,11 @@ public class MinecraftGL {
             int id = world[bx][by][bz] & 0xff;
             if (id == AIR) continue;
             if (id == DOOR_BOTTOM || id == DOOR_TOP || id == CHEST) continue;
-            // tall_grass i wheat rysujemy w przebiegu "leaves" (transparent) jako X-cross
+            // Tall grass and crops use Minecraft's CUTOUT_MIPPED layer: alpha
+            // test with depth writes, before entities (not the water blend pass).
             boolean isCross = (id == TALL_GRASS || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3);
             if (isCross) {
-                if (!leaves) continue;
+                if (leaves) continue;
                 addCrossFaces(bx, by, bz, id);
                 continue;
             }
@@ -6163,6 +6204,7 @@ public class MinecraftGL {
         }
         glEnd();
         glEndList();
+        buildingTerrainMesh = false;
     }
 
     void addVisibleFaces(int bx, int by, int bz, int id) {
@@ -6188,9 +6230,8 @@ public class MinecraftGL {
         int tile = tileFor(id, 0);
         double u0 = atlasU0(tile), u1 = atlasU1(tile);
         double v0 = atlasV0(), v1 = atlasV1();
-        float light = 0.95f;
         setFixedFunctionLightmapCoords(bx, by, bz);
-        glColor4f(light, light, light, 1f);
+        glColor4f(1f, 1f, 1f, 1f);
         double x0 = bx, x1 = bx + 1, z0 = bz, z1 = bz + 1;
         double y0 = by, y1 = by + 1;
         // Pierwszy diagonal (NW-SE) - dwustronnie
@@ -6233,8 +6274,9 @@ public class MinecraftGL {
         double u0 = atlasU0(tile);
         double u1 = atlasU1(tile);
         double v0 = atlasV0(), v1 = atlasV1();
-        // Direction shading (jak w MC - top jasny, bok srednio, dol ciemny)
-        float dirShade = dir == 2 ? 1.0f : dir == 3 ? 0.45f : dir < 2 ? 0.72f : 0.62f;
+        // BlockModelRenderer directional diffuse values: DOWN=.5, UP=1,
+        // NORTH/SOUTH=.8 and WEST/EAST=.6.
+        float dirShade = dir == 2 ? 1.0f : dir == 3 ? 0.5f : dir < 2 ? 0.6f : 0.8f;
         // Sample light z sasiada po stronie ktora patrzy face (blok POWIETRZA obok)
         int nx = x, ny = y, nz = z;
         switch (dir) {
@@ -6249,22 +6291,66 @@ public class MinecraftGL {
         // colour only carries directional diffuse shading and local AO.
         setFixedFunctionLightmapCoords(nx, ny, nz);
         float light = dirShade;
-        // AO na krawedziach (bardziej wyraziste - widoczne przy GL_SMOOTH)
-        float a = 1.00f, b = 0.82f, c = 0.62f, d = 0.75f;
         switch (dir) {
             case 0:
-                vtx(u0,v1,x+1,y,z+1,light,c); vtx(u1,v1,x+1,y,z,light,d); vtx(u1,v0,x+1,y+1,z,light,a); vtx(u0,v0,x+1,y+1,z+1,light,b); break;
+                faceVtx(u0,v1,x+1,y,z+1,light,x,y,z,dir); faceVtx(u1,v1,x+1,y,z,light,x,y,z,dir); faceVtx(u1,v0,x+1,y+1,z,light,x,y,z,dir); faceVtx(u0,v0,x+1,y+1,z+1,light,x,y,z,dir); break;
             case 1:
-                vtx(u0,v1,x,y,z,light,c); vtx(u1,v1,x,y,z+1,light,d); vtx(u1,v0,x,y+1,z+1,light,a); vtx(u0,v0,x,y+1,z,light,b); break;
+                faceVtx(u0,v1,x,y,z,light,x,y,z,dir); faceVtx(u1,v1,x,y,z+1,light,x,y,z,dir); faceVtx(u1,v0,x,y+1,z+1,light,x,y,z,dir); faceVtx(u0,v0,x,y+1,z,light,x,y,z,dir); break;
             case 2:
-                vtx(u0,v0,x,y+1,z,light,b); vtx(u1,v0,x+1,y+1,z,light,a); vtx(u1,v1,x+1,y+1,z+1,light,b); vtx(u0,v1,x,y+1,z+1,light,a); break;
+                faceVtx(u0,v0,x,y+1,z,light,x,y,z,dir); faceVtx(u1,v0,x+1,y+1,z,light,x,y,z,dir); faceVtx(u1,v1,x+1,y+1,z+1,light,x,y,z,dir); faceVtx(u0,v1,x,y+1,z+1,light,x,y,z,dir); break;
             case 3:
-                vtx(u0,v1,x,y,z+1,light,c); vtx(u1,v1,x+1,y,z+1,light,c); vtx(u1,v0,x+1,y,z,light,d); vtx(u0,v0,x,y,z,light,d); break;
+                faceVtx(u0,v1,x,y,z+1,light,x,y,z,dir); faceVtx(u1,v1,x+1,y,z+1,light,x,y,z,dir); faceVtx(u1,v0,x+1,y,z,light,x,y,z,dir); faceVtx(u0,v0,x,y,z,light,x,y,z,dir); break;
             case 4:
-                vtx(u0,v1,x,y,z+1,light,c); vtx(u1,v1,x+1,y,z+1,light,d); vtx(u1,v0,x+1,y+1,z+1,light,a); vtx(u0,v0,x,y+1,z+1,light,b); break;
+                faceVtx(u0,v1,x,y,z+1,light,x,y,z,dir); faceVtx(u1,v1,x+1,y,z+1,light,x,y,z,dir); faceVtx(u1,v0,x+1,y+1,z+1,light,x,y,z,dir); faceVtx(u0,v0,x,y+1,z+1,light,x,y,z,dir); break;
             case 5:
-                vtx(u0,v1,x+1,y,z,light,c); vtx(u1,v1,x,y,z,light,d); vtx(u1,v0,x,y+1,z,light,a); vtx(u0,v0,x+1,y+1,z,light,b); break;
+                faceVtx(u0,v1,x+1,y,z,light,x,y,z,dir); faceVtx(u1,v1,x,y,z,light,x,y,z,dir); faceVtx(u1,v0,x,y+1,z,light,x,y,z,dir); faceVtx(u0,v0,x+1,y+1,z,light,x,y,z,dir); break;
         }
+    }
+
+    void faceVtx(double u, double v, double vx, double vy, double vz, float light,
+                 int blockX, int blockY, int blockZ, int dir) {
+        vtx(u, v, vx, vy, vz, light,
+                ambientOcclusion(blockX, blockY, blockZ, dir, vx, vy, vz));
+    }
+
+    /**
+     * Corner AO from the two edge neighbours and their diagonal. This is the
+     * fixed-function equivalent of BlockModelRenderer.AmbientOcclusionFace;
+     * unlike the old constant diagonal it reacts to actual surrounding cubes.
+     */
+    float ambientOcclusion(int x, int y, int z, int dir, double vx, double vy, double vz) {
+        if (!buildingTerrainMesh) return 1.0f;
+        int dx = vx <= x ? -1 : 1;
+        int dy = vy <= y ? -1 : 1;
+        int dz = vz <= z ? -1 : 1;
+        boolean sideA, sideB, corner;
+        if (dir == 0 || dir == 1) {
+            int ox = x + (dir == 0 ? 1 : -1);
+            sideA = occludesAo(ox, y + dy, z);
+            sideB = occludesAo(ox, y, z + dz);
+            corner = occludesAo(ox, y + dy, z + dz);
+        } else if (dir == 2 || dir == 3) {
+            int oy = y + (dir == 2 ? 1 : -1);
+            sideA = occludesAo(x + dx, oy, z);
+            sideB = occludesAo(x, oy, z + dz);
+            corner = occludesAo(x + dx, oy, z + dz);
+        } else {
+            int oz = z + (dir == 4 ? 1 : -1);
+            sideA = occludesAo(x + dx, y, oz);
+            sideB = occludesAo(x, y + dy, oz);
+            corner = occludesAo(x + dx, y + dy, oz);
+        }
+        int obstruction = (sideA ? 1 : 0) + (sideB ? 1 : 0) + (corner ? 1 : 0);
+        if (sideA && sideB) obstruction = 3;
+        return 1.0f - obstruction * 0.2f;
+    }
+
+    boolean occludesAo(int x, int y, int z) {
+        if (y < 0 || x < 0 || z < 0 || x >= WORLD_X || z >= WORLD_Z) return true;
+        if (y >= WORLD_Y) return false;
+        int id = world[x][y][z] & 0xff;
+        return id == GRASS || id == DIRT || id == STONE || id == WOOD
+                || id == SAND || id == PLANKS || id == CRAFTING_TABLE;
     }
 
     void vtx(double u, double v, double x, double y, double z, float light, float shade) {
@@ -6275,12 +6361,14 @@ public class MinecraftGL {
     }
 
     void waterFace(int x, int y, int z, int dir) {
+        boolean animated = gameRenderer.getWaterTexId() > 0;
         int tile = 11;
-        double u0 = atlasU0(tile);
-        double u1 = atlasU1(tile);
-        double v0 = atlasV0(), v1 = atlasV1();
+        double u0 = animated ? 0.0 : atlasU0(tile);
+        double u1 = animated ? 1.0 : atlasU1(tile);
+        double v0 = animated ? 0.0 : atlasV0();
+        double v1 = animated ? 1.0 : atlasV1();
         double top = y + (isWater(x, y + 1, z) ? 1.0 : 0.88);
-        float dirShade = dir == 2 ? 0.95f : dir == 3 ? 0.45f : 0.68f;
+        float dirShade = dir == 2 ? 1.0f : dir == 3 ? 0.5f : dir < 2 ? 0.6f : 0.8f;
         int nxw = x, nyw = y, nzw = z;
         switch (dir) {
             case 0: nxw = x + 1; break;
@@ -6292,14 +6380,17 @@ public class MinecraftGL {
         }
         setFixedFunctionLightmapCoords(nxw, nyw, nzw);
         float light = dirShade;
-        glColor4f(0.42f * light, 0.66f * light, 1.0f * light, 0.58f);
+        // BlockColors WATER_COLOR (0x3F76E4) multiplied with vanilla
+        // water_still.png, exactly as the 1.12 translucent block layer.
+        glColor4f((0x3f / 255.0f) * light,
+                (0x76 / 255.0f) * light,
+                (0xe4 / 255.0f) * light, 1.0f);
         switch (dir) {
             case 0:
                 glTexCoord2d(u0,v1); glVertex3d(x+1,y,z+1); glTexCoord2d(u1,v1); glVertex3d(x+1,y,z); glTexCoord2d(u1,v0); glVertex3d(x+1,top,z); glTexCoord2d(u0,v0); glVertex3d(x+1,top,z+1); break;
             case 1:
                 glTexCoord2d(u0,v1); glVertex3d(x,y,z); glTexCoord2d(u1,v1); glVertex3d(x,y,z+1); glTexCoord2d(u1,v0); glVertex3d(x,top,z+1); glTexCoord2d(u0,v0); glVertex3d(x,top,z); break;
             case 2:
-                glColor4f(0.48f, 0.72f, 1.0f, 0.55f);
                 glTexCoord2d(u0,v0); glVertex3d(x,top,z); glTexCoord2d(u1,v0); glVertex3d(x+1,top,z); glTexCoord2d(u1,v1); glVertex3d(x+1,top,z+1); glTexCoord2d(u0,v1); glVertex3d(x,top,z+1); break;
             case 3:
                 glTexCoord2d(u0,v1); glVertex3d(x,y,z+1); glTexCoord2d(u1,v1); glVertex3d(x+1,y,z+1); glTexCoord2d(u1,v0); glVertex3d(x+1,y,z); glTexCoord2d(u0,v0); glVertex3d(x,y,z); break;
@@ -6566,7 +6657,7 @@ public class MinecraftGL {
         escWasDown = true;
         chestMouseWasDown = true;  // wazne - inaczej od razu zarejestrowalibysmy klikniecie
         rightWasDown = true;
-        sound.playClick();
+        sound.playChestOpen();
     }
 
     void closeChest() {
@@ -6582,7 +6673,7 @@ public class MinecraftGL {
         escWasDown = true;
         leftWasDown = true;
         rightWasDown = true;
-        sound.playClick();
+        sound.playChestClose();
     }
 
     void handleChestInput(boolean left, boolean right) {

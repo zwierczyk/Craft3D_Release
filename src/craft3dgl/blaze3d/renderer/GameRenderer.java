@@ -5,15 +5,10 @@ import java.util.Map;
 import craft3dgl.blaze3d.shaders.EffectInstance;
 
 /**
- * MC 1.14.4-1.17 style GameRenderer - laduje wszystkie core shadery raz na start,
- * daje dostep przez getShader(name). Uzywany przez RenderSystem.setShader(...).
- *
- * Uzycie:
- *   GameRenderer.getInstance().init();  // raz po init OpenGL
- *   EffectInstance shader = GameRenderer.getInstance().getShader(\"position_tex_color\");
- *   shader.apply();
- *   // ... rysujemy
- *   shader.clear();
+ * Render resources shared by the Minecraft 1.12 fixed-function path.
+ * The later JSON core-shader experiment is retained as source code only; init()
+ * deliberately creates the 1.12 lightmap without selecting/loading that
+ * incompatible terrain pipeline.
  */
 public class GameRenderer {
     private static final GameRenderer INSTANCE = new GameRenderer();
@@ -31,18 +26,11 @@ public class GameRenderer {
 
     public boolean isInitialized() { return initialized; }
 
-    /** Laduje wszystkie core shadery. Wywolaj RAZ po init OpenGL (po glfwMakeContextCurrent). */
+    /** Creates vanilla fixed-function resources after glfwMakeContextCurrent. */
     public void init() {
         if (initialized) return;
-        System.out.println("[GameRenderer] init() - loading core shaders...");
-        loadShader("position");
-        loadShader("position_color");
-        loadShader("position_tex");
-        loadShader("position_tex_color");
-        loadShader("rendertype_solid");
-        loadShader("rendertype_cutout");
-        loadShader("rendertype_translucent");
-        // Twz white 1x1 lightmap texture (fallback dla Sampler2 dopoki nie damy prawdziwej)
+        System.out.println("[GameRenderer] init() - Minecraft 1.12 fixed-function lightmap");
+        // White 1x1 lightmap fallback while the real map is being created.
         try {
             whiteLightmapTexId = org.lwjgl.opengl.GL11.glGenTextures();
             org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, whiteLightmapTexId);
@@ -66,13 +54,14 @@ public class GameRenderer {
         } catch (Throwable t) {
             System.err.println("[GameRenderer] lightmap create failed: " + t);
         }
+        // Vanilla water_still.png animation (32 frames, two ticks each).
         try {
             waterTexture = new craft3dgl.blaze3d.shadow.WaterTexture();
         } catch (Throwable t) {
             System.err.println("[GameRenderer] water texture create failed: " + t);
         }
         initialized = true;
-        System.out.println("[GameRenderer] init() DONE - " + shaders.size() + " shaders loaded");
+        System.out.println("[GameRenderer] init() DONE - vanilla lightmap/water ready");
     }
 
     public craft3dgl.blaze3d.shadow.LightmapTexture getLightmapTexture() { return lightmapTexture; }

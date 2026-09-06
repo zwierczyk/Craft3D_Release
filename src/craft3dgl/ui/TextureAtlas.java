@@ -15,8 +15,9 @@ import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
 /**
- * Generator atlasu tekstur bloków: każdy tile rysowany proceduralnie (jitter + wzór).
- * Zwraca ID GL texture który MinecraftGL używa do rysowania bloków.
+ * Minecraft 1.12 block texture atlas. Vanilla PNGs are scaled with nearest
+ * filtering and padded to avoid mip bleeding; procedural tiles are retained
+ * only as an emergency missing-asset fallback.
  */
 public final class TextureAtlas {
     public static final int TILE = 32;
@@ -42,33 +43,38 @@ public final class TextureAtlas {
 
     public static int createTextureAtlas() {
         BufferedImage img = new BufferedImage(ATLAS_COLS * ATLAS_TILE, ATLAS_ROWS * ATLAS_TILE, BufferedImage.TYPE_INT_ARGB);
-        makeTilePng(img, 0, "grass_top", 0x4fae3e, 0x2f8a32, "grass_top");
+        // Vanilla 1.12 textures. Plains biome tint comes from grass.png and
+        // foliage.png at temperature 0.8 / rainfall 0.4.
+        makeTilePngTinted(img, 0, "grass_top", 0x91BD59, 0x2f8a32, 0x155c26, "grass_top");
         makeTilePng(img, 1, "grass_side", 0x7a4e2d, 0x3c9a34, "grass_side");
         makeTilePng(img, 2, "dirt", 0x7b4d2e, 0x5a3823, "dirt");
         makeTilePng(img, 3, "stone", 0x787b82, 0x4f5157, "stone");
         makeTilePng(img, 4, "log_side", 0x8b5728, 0x5b351a, "log_side");
-        makeTile(img, 5, 0, 0xa66c35, 0x5b351a, "log_top");
-        makeTilePngTinted(img, 6, "oak_leaves", 0x48B518, 0x278b3c, 0x155c26, "leaves");
+        makeTilePng(img, 5, "log_top", 0xa66c35, 0x5b351a, "log_top");
+        makeTilePngTinted(img, 6, "oak_leaves", 0x77AB2F, 0x278b3c, 0x155c26, "leaves");
         makeTilePng(img, 7, "sand", 0xdcc47a, 0xb69b55, "sand");
         makeTilePng(img, 8, "planks", 0xa86f39, 0x5c361c, "planks");
-        makeTile(img, 9, 0, 0xa86f39, 0x4c2d18, "craft_top");
-        makeTile(img, 10, 0, 0x965f2d, 0x4c2d18, "craft_side");
-        makeTile(img, 11, 0, 0x3c78d8, 0x1d4f9a, "water");
+        makeTilePng(img, 9, "craft_top", 0xa86f39, 0x4c2d18, "craft_top");
+        makeTilePng(img, 10, "craft_side", 0x965f2d, 0x4c2d18, "craft_side");
+        makeTilePng(img, 11, "water", 0x3c78d8, 0x1d4f9a, "water");
         makeTilePng(img, 12, "oak_door_bottom", 0xa56b32, 0x4c2d18, "door_bottom");
         makeTilePng(img, 13, "oak_door_top", 0xa56b32, 0x4c2d18, "door_top");
+        // Chest blocks are rendered as MCP tile entities; these two atlas
+        // entries remain only for legacy item thumbnails.
         makeTile(img, 14, 0, 0x9c6d35, 0x4a2d10, "chest_top");
         makeTile(img, 15, 0, 0xa97338, 0x4a2d10, "chest_side");
-        // FARMING TEXTURES
-        makeTile(img, 16, 0, 0x5a3823, 0x3a2417, "farmland");
-        makeTilePngTinted(img, 17, "tall_grass", 0x72AE46, 0x4faa3a, 0x2f8a32, "tall_grass");
-        makeTile(img, 18, 0, 0x4faa3a, 0x2f7a32, "wheat_0");
-        makeTile(img, 19, 0, 0x6fb83a, 0x3f9c32, "wheat_1");
-        makeTile(img, 20, 0, 0x9fb83a, 0x6f9c32, "wheat_2");
-        makeTile(img, 21, 0, 0xe8c248, 0xa68830, "wheat_3");
+        makeTilePng(img, 16, "farmland", 0x5a3823, 0x3a2417, "farmland");
+        makeTilePngTinted(img, 17, "tall_grass", 0x91BD59, 0x4faa3a, 0x2f8a32, "tall_grass");
+        makeTilePng(img, 18, "wheat_0", 0x4faa3a, 0x2f7a32, "wheat_0");
+        makeTilePng(img, 19, "wheat_1", 0x6fb83a, 0x3f9c32, "wheat_1");
+        makeTilePng(img, 20, "wheat_2", 0x9fb83a, 0x6f9c32, "wheat_2");
+        makeTilePng(img, 21, "wheat_3", 0xe8c248, 0xa68830, "wheat_3");
+        makeTilePng(img, 22, "craft_front", 0x965f2d, 0x4c2d18, "craft_side");
 
         int tex = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, tex);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        // TextureUtil.uploadTextureMipmap with blur=false in Minecraft 1.12.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
@@ -103,6 +109,12 @@ public final class TextureAtlas {
             if (!file.isFile()) return false;
             BufferedImage src = ImageIO.read(file);
             if (src == null) return false;
+            // Animated vanilla textures store frames vertically. The fixed
+            // 1.12 atlas currently displays frame zero rather than shrinking
+            // the complete strip into one tile.
+            if (src.getHeight() > src.getWidth()) {
+                src = src.getSubimage(0, 0, src.getWidth(), src.getWidth());
+            }
 
             // Jesli tint podany, przemnoz pixele PRZED wklejeniem do atlasu
             if (tint != 0) {

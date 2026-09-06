@@ -23,12 +23,19 @@ public final class LightEngine {
         this.light = new byte[WORLD_X][WORLD_Y][WORLD_Z];
     }
 
+    /** Block.getLightOpacity values relevant to the current 1.12 block set. */
+    public static int lightOpacity(int id) {
+        if (id == AIR || id == TALL_GRASS
+                || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3
+                || id == DOOR_BOTTOM || id == DOOR_TOP) return 0;
+        if (id == LEAVES) return 1;
+        if (id == WATER) return 3;
+        return 15;
+    }
+
     /** Blok pozwala przepuscic swiatlo. */
     public static boolean isTransparent(int id) {
-        return id == AIR || id == WATER || id == LEAVES
-                || id == TALL_GRASS
-                || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3
-                || id == DOOR_BOTTOM || id == DOOR_TOP;
+        return lightOpacity(id) < 15;
     }
 
     /** Ile swiatla emituje blok (0 = nie emituje). */
@@ -79,17 +86,21 @@ public final class LightEngine {
             }
         }
 
-        // 2. Sky column: sky=15 wszedzie nad top solid blockiem
+        // 2. Chunk.generateSkylightMap: direct sky remains 15 through air,
+        // while leaves/water apply their 1.12 light-opacity values.
         java.util.ArrayDeque<int[]> skyQ = new java.util.ArrayDeque<>();
         for (int xx = padMinX; xx <= padMaxX; xx++) {
             for (int zz = padMinZ; zz <= padMaxZ; zz++) {
-                for (int yy = WORLD_Y - 1; yy >= 0; yy--) {
+                int level = 15;
+                for (int yy = WORLD_Y - 1; yy >= 0 && level > 0; yy--) {
                     int id = world[xx][yy][zz] & 0xff;
-                    if (isTransparent(id)) {
-                        setSky(xx, yy, zz, 15);
+                    int opacity = lightOpacity(id);
+                    if (opacity >= 15) break;
+                    if (opacity == 0 && level != 15) opacity = 1;
+                    level = Math.max(0, level - opacity);
+                    if (level > 0) {
+                        setSky(xx, yy, zz, level);
                         skyQ.add(new int[]{xx, yy, zz});
-                    } else {
-                        break; // ciemno pod solidem
                     }
                 }
             }
@@ -123,11 +134,12 @@ public final class LightEngine {
                 int nx = cx + dv[0], ny = cy + dv[1], nz = cz + dv[2];
                 if (nx < minX || nx > maxX || nz < minZ || nz > maxZ || ny < 0 || ny >= WORLD_Y) continue;
                 int nid = world[nx][ny][nz] & 0xff;
-                if (!isTransparent(nid)) continue;
-                // W dol bez zaniku (sky column), horyzontal -1, w gore -1
-                int newLv = (dv[1] == -1 && cur == 15) ? 15 : cur - 1;
-                if (nid == WATER) newLv = Math.max(0, newLv - 2);
-                else if (nid == LEAVES) newLv = Math.max(0, newLv - 1);
+                int opacity = lightOpacity(nid);
+                if (opacity >= 15) continue;
+                // Direct level-15 skylight does not decay down through air.
+                int attenuation = Math.max(1, opacity);
+                int newLv = (dv[1] == -1 && cur == 15 && opacity == 0)
+                        ? 15 : Math.max(0, cur - attenuation);
                 if (newLv > getSky(nx, ny, nz)) {
                     setSky(nx, ny, nz, newLv);
                     if (newLv > 1) q.add(new int[]{nx, ny, nz});
@@ -147,9 +159,9 @@ public final class LightEngine {
                 int nx = cx + dv[0], ny = cy + dv[1], nz = cz + dv[2];
                 if (nx < minX || nx > maxX || nz < minZ || nz > maxZ || ny < 0 || ny >= WORLD_Y) continue;
                 int nid = world[nx][ny][nz] & 0xff;
-                if (!isTransparent(nid)) continue;
-                int newLv = cur - 1;
-                if (nid == WATER) newLv = Math.max(0, newLv - 1);
+                int opacity = lightOpacity(nid);
+                if (opacity >= 15) continue;
+                int newLv = Math.max(0, cur - Math.max(1, opacity));
                 if (newLv > getBlockLight(nx, ny, nz)) {
                     setBlockLight(nx, ny, nz, newLv);
                     if (newLv > 1) q.add(new int[]{nx, ny, nz});
@@ -158,14 +170,41 @@ public final class LightEngine {
         }
     }
 
-    /** Mnoznik sky light w zaleznosci od pory dnia (0..1). */
+    /**
+     * WorldProvider.calculateCelestialAngle from MCP 9.40. Craft3D's public
+     * clock uses 0=midnight, .25=sunrise, .5=noon and .75=sunset, while
+     * Minecraft's world time starts at sunrise.
+     */
+    public static float celestialAngle(double dayFraction) {
+        double worldTime = dayFraction + 0.75;
+        worldTime = worldTime - Math.floor(worldTime);
+        float angle = (float)worldTime - 0.25f;
+        if (angle < 0.0f) angle += 1.0f;
+        if (angle > 1.0f) angle -= 1.0f;
+        float eased = 1.0f - ((float)Math.cos(angle * Math.PI) + 1.0f) / 2.0f;
+        return angle + (eased - angle) / 3.0f;
+    }
+
+    /** World.getSunBrightness (clear weather) from Minecraft 1.12. */
     public static float skyDayMultiplier(double dayFraction) {
-        double t = ((dayFraction % 1.0) + 1.0) % 1.0;
-        float NIGHT = 0.15f;
-        if (t < 0.15) return NIGHT;
-        if (t < 0.30) return (float)(NIGHT + (t - 0.15) / 0.15 * (1.0 - NIGHT));
-        if (t < 0.70) return 1.0f;
-        if (t < 0.85) return (float)(1.0 - (t - 0.70) / 0.15 * (1.0 - NIGHT));
-        return NIGHT;
+        float angle = celestialAngle(dayFraction);
+        float darkness = 1.0f - ((float)Math.cos(angle * Math.PI * 2.0) * 2.0f + 0.2f);
+        darkness = Math.max(0.0f, Math.min(1.0f, darkness));
+        return (1.0f - darkness) * 0.8f + 0.2f;
+    }
+
+    /** Multiplier used by World.getSkyColor and WorldProvider.getFogColor. */
+    public static float skyColorMultiplier(double dayFraction) {
+        float angle = celestialAngle(dayFraction);
+        float value = (float)Math.cos(angle * Math.PI * 2.0) * 2.0f + 0.5f;
+        return Math.max(0.0f, Math.min(1.0f, value));
+    }
+
+    /** World.getStarBrightness from MCP 9.40. */
+    public static float starBrightness(double dayFraction) {
+        float angle = celestialAngle(dayFraction);
+        float value = 1.0f - ((float)Math.cos(angle * Math.PI * 2.0) * 2.0f + 0.25f);
+        value = Math.max(0.0f, Math.min(1.0f, value));
+        return value * value * 0.5f;
     }
 }

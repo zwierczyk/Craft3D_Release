@@ -1,9 +1,14 @@
-Folder na przyszle pliki dzwiekowe gry.
+Minecraft Java Edition 1.12.2 sound set used by Craft3D
+========================================================
 
-Obecnie Craft3D nie zawiera zadnych dolaczonych plikow audio. SoundEngine
-zostaje w kodzie, aby latwo dodac nowe dzwieki w przyszlosci. Jezeli w folderze
-pojawi sie plik WAV o ponizszej nazwie, gra wykorzysta go automatycznie:
+These WAV files are lossless PCM conversions of the original OGG sound assets
+for Minecraft Java Edition 1.12.2. Their directory names and event mappings are
+kept in events.properties exactly as in that version's sounds.json. Craft3D
+loads the variants randomly and applies the event volume/pitch rules from MCP
+9.40 instead of generating substitute tones or noise.
 
-  click.wav, jump.wav, place.wav, break.wav, step.wav, eat.wav, hurt.wav
-  animal.wav, cow.wav, pig.wav, sheep.wav, experience_orb.wav, xp.wav
-  levelup.wav, door_open.wav, door_close.wav, splash.wav
+Source paths:
+  assets/minecraft/sounds/** in Minecraft Java Edition 1.12.2
+  assets/minecraft/sounds.json in Minecraft Java Edition 1.12.2
+
+The files are included only for use by this Minecraft-style game release.
