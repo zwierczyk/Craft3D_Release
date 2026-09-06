@@ -1301,8 +1301,8 @@ public class MinecraftGL {
         creativeSearch.setLength(0); chatInput.setLength(0); chatLog.clear();
         doorMeta.clear();
         chestIds.clear(); chestCounts.clear(); chestOpen = false;
-        swingTimer = 0; walkPhase = 0; lastPosInit = false;
-        particles.clear();
+        swingTimer = 0; walkPhase = 0; lastPosInit = false; wasInWater = false;
+        particleSystem.clear();
     }
 
     void saveWorld(String name) {
@@ -1879,21 +1879,8 @@ public class MinecraftGL {
         double len = Math.sqrt(forward * forward + strafe * strafe);
         if (len > 0) { forward /= len; strafe /= len; }
         boolean inWater = playerTouchingWater();
-        if (inWater != wasInWater) {
-            // Splash particles!
-            for (int i = 0; i < 14; i++) {
-                double vx = (random.nextDouble() - 0.5) * 3.0;
-                double vy = 1.5 + random.nextDouble() * 3.0;
-                double vz = (random.nextDouble() - 0.5) * 3.0;
-                Particle sp = new Particle(x + (random.nextDouble() - 0.5) * 0.5,
-                        y + 0.05, z + (random.nextDouble() - 0.5) * 0.5,
-                        vx, vy, vz, 0.6 + random.nextDouble() * 0.3, 3);
-                sp.size(0.05 + random.nextDouble() * 0.04);
-                sp.gravity(6.0);
-                particles.add(sp);
-            }
-            wasInWater = inWater;
-        }
+        boolean enteredWater = inWater && !wasInWater;
+        wasInWater = inWater;
         boolean ctrlDownH = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
         boolean shiftDownH = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
         // A player cannot stand up while a low ceiling occupies the standing hitbox.
@@ -1917,6 +1904,10 @@ public class MinecraftGL {
         double dx = (sin * forward + cos * strafe) * speed * dt;
         double dz = (cos * forward - sin * strafe) * speed * dt;
         boolean moving = Math.abs(dx) + Math.abs(dz) > 0.001;
+        if (enteredWater) {
+            double tickScale = 0.05 / Math.max(0.001, dt);
+            spawnWaterEntryParticles(dx * tickScale, velY * 0.05, dz * tickScale);
+        }
         moveHorizontal(dx, dz, sneaking && onGround && !flying);
 
         boolean spaceDown = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
@@ -1988,7 +1979,8 @@ public class MinecraftGL {
         spaceWasDown = spaceDown;
 
         updateSurvival(dt, moving);
-        updateStepSound(dt, moving);
+        double movementTickScale = 0.05 / Math.max(0.001, dt);
+        updateStepSound(dt, moving, sprinting, dx * movementTickScale, dz * movementTickScale);
         updateDrops(dt);
         updateAnimals(dt);
         updateXpOrbs(dt);
@@ -2009,18 +2001,7 @@ public class MinecraftGL {
         // Update damage numbers
         craft3dgl.ui.DamageNumbers.update(dt);
 
-        java.util.Iterator<Particle> pit = particles.iterator();
-        while (pit.hasNext()) {
-            Particle p = pit.next();
-            p.age += dt;
-            if (p.age >= p.maxAge) { pit.remove(); continue; }
-            p.x += p.vx * dt;
-            p.y += p.vy * dt;
-            p.z += p.vz * dt;
-            p.vy -= 4.5 * dt;
-            p.vx *= 0.96;
-            p.vz *= 0.96;
-        }
+        particleSystem.update(dt, particleWorld);
 
         if (!lastPosInit) { lastX = x; lastZ = z; lastPosInit = true; }
         double moveDx = x - lastX, moveDz = z - lastZ;
@@ -2274,50 +2255,55 @@ public class MinecraftGL {
         }
     }
 
-    /** Spawn 8-12 kolorowych okruchow bloku przy zniszczeniu (jak w MC). */
-    void spawnBlockBreakParticles(int bx, int by, int bz, int blockId) {
-        float[] col = craft3dgl.world.BlockColors.colorFor(blockId);
-        int count = 8 + random.nextInt(5);
+    /** MCP Entity.doWaterSplashEffect: 13 bubbles and 13 splashes for width 0.6. */
+    void spawnWaterEntryParticles(double motionX, double motionY, double motionZ) {
+        final double width = 0.6;
+        final int count = (int)(1.0 + width * 20.0);
+        final double surfaceY = Math.floor(y) + 1.0;
         for (int i = 0; i < count; i++) {
-            double px = bx + 0.15 + random.nextDouble() * 0.70;
-            double py = by + 0.15 + random.nextDouble() * 0.70;
-            double pz = bz + 0.15 + random.nextDouble() * 0.70;
-            double vx = (random.nextDouble() - 0.5) * 2.5;
-            double vy = 1.5 + random.nextDouble() * 2.0;
-            double vz = (random.nextDouble() - 0.5) * 2.5;
-            // Kolor z jitterem (jasniejszy/ciemniejszy)
-            float jitter = (random.nextFloat() - 0.5f) * 0.15f;
-            Particle p = new Particle(px, py, pz, vx, vy, vz,
-                    0.8 + random.nextDouble() * 0.4, 2);
-            p.color(Math.max(0, Math.min(1, col[0] + jitter)),
-                    Math.max(0, Math.min(1, col[1] + jitter)),
-                    Math.max(0, Math.min(1, col[2] + jitter)));
-            p.size(0.04 + random.nextDouble() * 0.05);
-            particles.add(p);
+            double offset = (random.nextDouble() * 2.0 - 1.0) * width;
+            double px = x + offset;
+            double pz = z + (random.nextDouble() * 2.0 - 1.0) * width;
+            particleSystem.add(Particle.bubble(random, px, surfaceY, pz,
+                    motionX, motionY - random.nextDouble() * 0.2, motionZ));
+        }
+        for (int i = 0; i < count; i++) {
+            double offset = (random.nextDouble() * 2.0 - 1.0) * width;
+            double px = x + offset;
+            double pz = z + (random.nextDouble() * 2.0 - 1.0) * width;
+            particleSystem.add(Particle.splash(random, px, surfaceY, pz,
+                    motionX, motionY, motionZ));
         }
     }
 
-    /** Spawn 2-3 malych okruchow gdy trwa mining (podczas kopania). */
-    void spawnMiningParticles(int bx, int by, int bz, int blockId, int hitNx, int hitNy, int hitNz) {
-        float[] col = craft3dgl.world.BlockColors.colorFor(blockId);
-        int count = 2 + random.nextInt(2);
-        for (int i = 0; i < count; i++) {
-            // Spawn na uderzonej scianie
-            double px = bx + 0.5 + hitNx * 0.55 + (random.nextDouble() - 0.5) * 0.6;
-            double py = by + 0.5 + hitNy * 0.55 + (random.nextDouble() - 0.5) * 0.6;
-            double pz = bz + 0.5 + hitNz * 0.55 + (random.nextDouble() - 0.5) * 0.6;
-            double vx = hitNx * 1.5 + (random.nextDouble() - 0.5) * 1.2;
-            double vy = 0.5 + random.nextDouble() * 1.0;
-            double vz = hitNz * 1.5 + (random.nextDouble() - 0.5) * 1.2;
-            float jitter = (random.nextFloat() - 0.5f) * 0.15f;
-            Particle p = new Particle(px, py, pz, vx, vy, vz,
-                    0.3 + random.nextDouble() * 0.3, 2);
-            p.color(Math.max(0, Math.min(1, col[0] + jitter)),
-                    Math.max(0, Math.min(1, col[1] + jitter)),
-                    Math.max(0, Math.min(1, col[2] + jitter)));
-            p.size(0.025 + random.nextDouble() * 0.02);
-            particles.add(p);
+    /** MCP ParticleManager.addBlockDestroyEffects: a complete 4x4x4 fragment grid. */
+    void spawnBlockBreakParticles(int bx, int by, int bz, int blockId) {
+        for (int ix = 0; ix < 4; ix++) {
+            for (int iy = 0; iy < 4; iy++) {
+                for (int iz = 0; iz < 4; iz++) {
+                    double px = bx + (ix + 0.5) / 4.0;
+                    double py = by + (iy + 0.5) / 4.0;
+                    double pz = bz + (iz + 0.5) / 4.0;
+                    particleSystem.add(Particle.blockCrack(random, px, py, pz,
+                            px - bx - 0.5, py - by - 0.5, pz - bz - 0.5, blockId));
+                }
+            }
         }
+    }
+
+    /** MCP ParticleManager.addBlockHitEffects: one inset, scaled BLOCK_CRACK particle. */
+    void spawnMiningParticles(int bx, int by, int bz, int blockId, int hitNx, int hitNy, int hitNz) {
+        double px = bx + random.nextDouble() * 0.8 + 0.1;
+        double py = by + random.nextDouble() * 0.8 + 0.1;
+        double pz = bz + random.nextDouble() * 0.8 + 0.1;
+        if (hitNx < 0) px = bx - 0.1;
+        else if (hitNx > 0) px = bx + 1.1;
+        else if (hitNy < 0) py = by - 0.1;
+        else if (hitNy > 0) py = by + 1.1;
+        else if (hitNz < 0) pz = bz - 0.1;
+        else if (hitNz > 0) pz = bz + 1.1;
+        particleSystem.add(Particle.blockCrack(random, px, py, pz,
+                0.0, 0.0, 0.0, blockId).multiplyVelocity(0.2f).multiplyScale(0.6f));
     }
 
     /** Specjalne dropy ktore wypadaja dodatkowo lub zamiast podstawowych. */
@@ -2772,39 +2758,42 @@ public class MinecraftGL {
         if (invCount[selectedSlot] <= 0) { invId[selectedSlot] = 0; invCount[selectedSlot] = 0; }
     }
 
-    void updateStepSound(double dt, boolean moving) {
-        if (!onGround || !moving || deathScreen || inventoryOpen) { stepSoundTimer = 0; footstepDustTimer = 0; return; }
+    void updateStepSound(double dt, boolean moving, boolean sprinting,
+                         double motionXPerTick, double motionZPerTick) {
+        // Entity.createRunningParticles emits one BLOCK_CRACK per sprint tick, never in water.
+        if (sprinting) {
+            footstepDustTimer += dt;
+            while (footstepDustTimer >= 0.05) {
+                footstepDustTimer -= 0.05;
+                spawnRunningParticle(motionXPerTick, motionZPerTick);
+            }
+        } else {
+            footstepDustTimer = 0.0;
+        }
+
+        if (!onGround || !moving || deathScreen || inventoryOpen) {
+            stepSoundTimer = 0;
+            return;
+        }
         stepSoundTimer -= dt;
         if (stepSoundTimer <= 0) {
             sound.playStep(blockUnderPlayer());
-            stepSoundTimer = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? 0.72 : 0.38;
-            // Spawn footstep dust
-            spawnFootstepDust();
+            stepSoundTimer = sneaking ? 0.72 : 0.38;
         }
     }
 
-    /** Male chmurki pylu podczas chodzenia (kolor zalezy od bloku pod). */
-    void spawnFootstepDust() {
-        int bid = blockUnderPlayer();
-        if (bid == AIR || bid == WATER) return;
-        float[] col = craft3dgl.world.BlockColors.colorFor(bid);
-        // Rozjasnij lekko
-        float r = Math.min(1f, col[0] * 1.15f + 0.05f);
-        float g = Math.min(1f, col[1] * 1.15f + 0.05f);
-        float b = Math.min(1f, col[2] * 1.15f + 0.05f);
-        int count = 2 + random.nextInt(2);
-        for (int i = 0; i < count; i++) {
-            double vx = (random.nextDouble() - 0.5) * 0.8;
-            double vy = 0.3 + random.nextDouble() * 0.4;
-            double vz = (random.nextDouble() - 0.5) * 0.8;
-            Particle p = new Particle(x + (random.nextDouble() - 0.5) * 0.35, y + 0.03,
-                    z + (random.nextDouble() - 0.5) * 0.35, vx, vy, vz,
-                    0.4 + random.nextDouble() * 0.3, 4);
-            p.color(r, g, b);
-            p.size(0.06 + random.nextDouble() * 0.03);
-            p.gravity(1.5);
-            particles.add(p);
-        }
+    /** MCP Entity.createRunningParticles. */
+    void spawnRunningParticle(double motionXPerTick, double motionZPerTick) {
+        int bx = (int)Math.floor(x);
+        int by = (int)Math.floor(y - 0.2);
+        int bz = (int)Math.floor(z);
+        int blockId = inWorld(bx, by, bz) ? world[bx][by][bz] & 0xff : AIR;
+        if (blockId == AIR || blockId == WATER) return;
+        double px = x + (random.nextDouble() - 0.5) * 0.6;
+        double py = y + 0.1;
+        double pz = z + (random.nextDouble() - 0.5) * 0.6;
+        particleSystem.add(Particle.blockCrack(random, px, py, pz,
+                -motionXPerTick * 4.0, 1.5, -motionZPerTick * 4.0, blockId));
     }
 
     int blockUnderPlayer() {
@@ -3021,29 +3010,30 @@ public class MinecraftGL {
 
     void attackVillager(VillagerGL v) {
         int dmg = craft3dgl.combat.DamageSystem.villagerDamage(selectedItemId());
+        int dealtDamage = Math.min(dmg, Math.max(0, v.health));
         v.health -= dmg;
         sound.playHurt();
         v.vx += Math.sin(yaw) * 1.8;
         v.vz += Math.cos(yaw) * 1.8;
         v.targetYaw = Math.atan2(v.vx, v.vz);
-        // Damage number + iskry przy uderzeniu
+        // Damage number + vanilla DAMAGE_INDICATOR particles.
         craft3dgl.ui.DamageNumbers.spawn(v.x, v.y + 2.0, v.z, "-" + dmg, 1f, 0.85f, 0.2f);
         craft3dgl.ui.Crosshair.triggerHit();
-        spawnHitSparks(v.x, v.y + 1.2, v.z);
+        spawnDamageIndicators(v.x,
+                v.y + craft3dgl.entities.EntityConstants.VILLAGER_HEIGHT * 0.5, v.z, dealtDamage);
     }
 
-    /** Iskry przy trafieniu entity. */
-    void spawnHitSparks(double px, double py, double pz) {
-        for (int i = 0; i < 8; i++) {
-            double vx = (random.nextDouble() - 0.5) * 3.5;
-            double vy = 1.0 + random.nextDouble() * 2.5;
-            double vz = (random.nextDouble() - 0.5) * 3.5;
-            Particle sp = new Particle(px, py, pz, vx, vy, vz,
-                    0.3 + random.nextDouble() * 0.25, 5);
-            sp.size(0.03 + random.nextDouble() * 0.03);
-            sp.gravity(3.0);
-            sp.additive(true);
-            particles.add(sp);
+    /** MCP EntityPlayer attack: DAMAGE_INDICATOR particles for more than two damage points. */
+    void spawnDamageIndicators(double px, double py, double pz, int damage) {
+        if (damage <= 2) return;
+        int count = (int)(damage * 0.5);
+        for (int i = 0; i < count; i++) {
+            double spawnX = px + random.nextGaussian() * 0.1;
+            double spawnZ = pz + random.nextGaussian() * 0.1;
+            particleSystem.add(Particle.damageIndicator(random, spawnX, py, spawnZ,
+                    random.nextGaussian() * 0.2,
+                    random.nextGaussian() * 0.2,
+                    random.nextGaussian() * 0.2));
         }
     }
 
@@ -3423,24 +3413,19 @@ public class MinecraftGL {
     void attackAnimal(AnimalGL a) {
         int item = selectedItemId();
         int dmg = craft3dgl.combat.DamageSystem.meleeDamage(item);
+        int dealtDamage = Math.min(dmg, Math.max(0, a.health));
         a.health -= dmg;
         // Dzwiek zalezny od typu zwierzat
         if (a.type == AnimalGL.COW) sound.playCow();
         else if (a.type == AnimalGL.PIG) sound.playPig();
         else if (a.type == AnimalGL.SHEEP) sound.playSheep();
         else sound.playAnimal();
-        // Damage number + iskry
+        // Damage number + vanilla DAMAGE_INDICATOR particles.
         craft3dgl.ui.DamageNumbers.spawn(a.x, a.y + 1.5, a.z, "-" + dmg, 1f, 0.85f, 0.2f);
         craft3dgl.ui.Crosshair.triggerHit();
-        spawnHitSparks(a.x, a.y + 0.8, a.z);
-        for (int i = 0; i < 3; i++) {
-            double angle = random.nextDouble() * Math.PI * 2;
-            double vx = Math.cos(angle) * 0.6;
-            double vz = Math.sin(angle) * 0.6;
-            double vy = 1.6 + random.nextDouble() * 0.6;
-            particles.add(new Particle(a.x + (random.nextDouble() - 0.5) * 0.4, a.y + 1.0,
-                    a.z + (random.nextDouble() - 0.5) * 0.4, vx, vy, vz, 0.9 + random.nextDouble() * 0.3, 0));
-        }
+        spawnDamageIndicators(a.x,
+                a.y + craft3dgl.entities.EntityConstants.animalHeight(a.type) * 0.5,
+                a.z, dealtDamage);
         double fx = Math.sin(yaw), fz = Math.cos(yaw);
         a.panicTimer = 5.0;
         a.panicRecalc = 0;
@@ -6856,16 +6841,11 @@ public class MinecraftGL {
     }
 
     void drawParticles() {
-        if (particles.isEmpty()) return;
-        particleSystem.particles.clear();
-        particleSystem.particles.addAll(particles);
-        // Prosty tint globalny dla particles bazujacy na swietle wokol gracza
-        // (spark kind=5 additive przechodzi bez zmian dzieki flow w ParticleSystem)
-        particleSystem.draw(yaw, pitch);
+        particleSystem.draw(textureAtlas, particleWorld);
     }
 
-    /** Wspoldzielony ParticleSystem do renderingu (uzywa naszej listy particles). */
-    final craft3dgl.entities.ParticleSystem particleSystem = new craft3dgl.entities.ParticleSystem();
+    /** One manager owns both particle simulation and rendering. */
+    final ParticleSystem particleSystem = new ParticleSystem();
 
     
     
@@ -6891,8 +6871,6 @@ public class MinecraftGL {
 
     // Particle przeniesiony do craft3dgl.entities.Particle
 
-    final java.util.ArrayList<Particle> particles = new java.util.ArrayList<>();
-
     static final class Chunk {
         int terrainList;
         int leavesList;
@@ -6908,6 +6886,40 @@ public class MinecraftGL {
     }
 
     // class Hit przeniesiona do craft3dgl.combat.Hit
+
+    /** Block/material access used by MCP-style per-tick particle physics. */
+    final ParticleSystem.WorldAccess particleWorld = new ParticleSystem.WorldAccess() {
+        @Override public boolean isSolid(double px, double py, double pz) {
+            int bx = (int)Math.floor(px);
+            int by = (int)Math.floor(py);
+            int bz = (int)Math.floor(pz);
+            if (by < 0 || bx < 0 || bz < 0 || bx >= WORLD_X || bz >= WORLD_Z) return true;
+            if (by >= WORLD_Y) return false;
+            int id = world[bx][by][bz] & 0xff;
+            if (isDoor(id)) {
+                double[] box = DoorSystem.doorBox(getDoorMeta(bx, by, bz));
+                double lx = px - bx;
+                double ly = py - by;
+                double lz = pz - bz;
+                return lx >= box[0] && lx <= box[3] && ly >= box[1] && ly <= box[4]
+                        && lz >= box[2] && lz <= box[5];
+            }
+            return id != AIR && id != WATER && id != TALL_GRASS
+                    && id != WHEAT_0 && id != WHEAT_1 && id != WHEAT_2 && id != WHEAT_3;
+        }
+
+        @Override public boolean isWater(double px, double py, double pz) {
+            return isWaterAt(px, py, pz);
+        }
+
+        @Override public float brightness(double px, double py, double pz) {
+            if (lightEngine == null) return 1.0f;
+            int bx = clampInt((int)Math.floor(px), 0, WORLD_X - 1);
+            int by = clampInt((int)Math.floor(py), 0, WORLD_Y - 1);
+            int bz = clampInt((int)Math.floor(pz), 0, WORLD_Z - 1);
+            return lightEngine.sampleShade(bx, by, bz, currentDayMult);
+        }
+    };
 
     /** Adapter RayCastera, lacznie z dokladnym selection boxem drzwi. */
     final craft3dgl.physics.RayCaster.WorldAccessor rayWorld = new craft3dgl.physics.RayCaster.WorldAccessor() {

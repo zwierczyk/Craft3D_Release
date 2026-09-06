@@ -8,6 +8,13 @@ import static craft3dgl.world.WorldConstants.*;
 public final class BlockTextures {
     private BlockTextures() {}
 
+    /** Texture selected by the Minecraft block model's \"particle\" entry. */
+    public static int particleTileFor(int id) {
+        // Vanilla grass and farmland models deliberately use dirt for fragments.
+        if (id == GRASS || id == FARMLAND) return 2;
+        return tileFor(id, 0);
+    }
+
     /** Direction: 0=+X, 1=-X, 2=+Y(top), 3=-Y(bottom), 4=+Z, 5=-Z */
     public static int tileFor(int id, int dir) {
         if (id == GRASS) return dir == 2 ? 0 : dir == 3 ? 2 : 1;
