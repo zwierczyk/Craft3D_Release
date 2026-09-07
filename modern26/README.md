@@ -53,12 +53,17 @@ modern26/
     Main.java            # okno GLFW + petla (GL 3.3 CORE)
     util/Json.java       # minimalny, samowystarczalny parser JSON
     client/
-      Game.java          # ekrany: tytulowy / wybor swiata / opcje
+      Game.java          # ekrany: tytulowy / wybor swiata / opcje / INGAME
       I18n.java          # en_us z assetow + PL dla uzywanych kluczy
+      Input.java         # wejscie jednej klatki (mysz/klawisze)
+      Ingame.java        # widok w swiecie: atlas+mesh+latanie (M3)
       font/FontRenderer  # font 26.2 z default.json (layout wg BitmapProvider)
       ui/Button.java     # przycisk vanilla 26.2 (nine-slice border z .mcmeta)
-    render/              # ShaderProgram, Texture, GuiBlit (tint/rect)
-    test/                # AssetsExtractor, AssetsTest, FontTest (headless)
+    model/BlockModels.java # modele/blockstate'y JSON 26.2 -> wypieczone sciany
+    world/               # World, WorldGen, MeshBuilder, BlockIds
+    render/              # ShaderProgram, Texture, GuiBlit, Mat4, TextureAtlas,
+                         # WorldRender (3D: shader + VBO)
+    test/                # AssetsExtractor, AssetsTest, FontTest, WorldTest (headless)
   assets/
     minecraft-26.2.zip   # ORYGINALNE assety 26.2 (tekstury, modele, lang, font)
     pack.png, version.json
@@ -84,5 +89,9 @@ modern26/
 - [x] M1: szkielet, GL 3.3 core, shader+tekstura, logo i przyciski 26.2
 - [x] M2: font z assetow (proporcjonalny, PL), przyciski nine-slice, I18n
       (en_us + PL), splash, ekran tytulowy / wybor swiata / opcje, mysz i ESC
-- [ ] M3: rejestr blokow z assetow (modele+blockstate'y), chunk mesh
-- [ ] M4: gracz, fizyka, interakcje
+- [x] M3: swiat - modele/blockstate'y JSON 26.2 (parent chain + zmienne
+      tekstur), FaceInfo/CuboidFace 26.2 (UV/winding), atlas tekstur blokow,
+      generacja swiata (szum, trawa/ziemia/kamien/piasek, debowe drzewa,
+      glazy), mesh z cullingiem sasiadow, tint trawy/lisci, cieniowanie scian,
+      latanie (WASD+mysz, Space/C, Shift, R - nowy swiat), pauza z menu 26.2
+- [ ] M4: gracz (kolizje, grawitacja), fizyka, interakcje (stawianie/kopanie)

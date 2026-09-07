@@ -20,6 +20,7 @@ import static org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_T;
 import static org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE;
 import static org.lwjgl.opengl.GL11.GL_CLAMP;
 import static org.lwjgl.opengl.GL11.glBindTexture;
+import static org.lwjgl.opengl.GL11.glDeleteTextures;
 import static org.lwjgl.opengl.GL11.glGenTextures;
 import static org.lwjgl.opengl.GL11.glTexImage2D;
 import static org.lwjgl.opengl.GL11.glTexParameteri;
@@ -94,5 +95,9 @@ public final class Texture {
     /** Wczytaj i wgryj w jednym kroku. */
     public static int load(String assetPath, boolean linear) throws IOException {
         return upload(decode(assetPath), linear);
+    }
+
+    public static void dispose(int textureId) {
+        if (textureId > 0) glDeleteTextures(textureId);
     }
 }

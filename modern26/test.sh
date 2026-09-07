@@ -32,3 +32,4 @@ fi
 
 "$JAVA_BIN" -cp "out/classes:out/testclasses:lib/*" craft3dmodern.test.AssetsTest
 "$JAVA_BIN" -cp "out/classes:out/testclasses:lib/*" craft3dmodern.test.FontTest
+"$JAVA_BIN" -cp "out/classes:out/testclasses:lib/*" craft3dmodern.test.WorldTest
