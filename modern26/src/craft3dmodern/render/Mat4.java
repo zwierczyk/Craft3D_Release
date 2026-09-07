@@ -26,6 +26,59 @@ public final class Mat4 {
         return c;
     }
 
+    public static float[] rotateX(float deg) {
+        float a = (float) Math.toRadians(deg);
+        float c = (float) Math.cos(a);
+        float sn = (float) Math.sin(a);
+        float[] m = identity();
+        m[5] = c;
+        m[6] = -sn;
+        m[9] = sn;
+        m[10] = c;
+        return m;
+    }
+
+    public static float[] rotateY(float deg) {
+        float a = (float) Math.toRadians(deg);
+        float c = (float) Math.cos(a);
+        float sn = (float) Math.sin(a);
+        float[] m = identity();
+        m[0] = c;
+        m[2] = sn;
+        m[8] = -sn;
+        m[10] = c;
+        return m;
+    }
+
+    public static float[] translate(float x, float y, float z) {
+        float[] m = identity();
+        m[3] = x;
+        m[7] = y;
+        m[11] = z;
+        return m;
+    }
+
+    public static float[] scale(float x, float y, float z) {
+        float[] m = identity();
+        m[0] = x;
+        m[5] = y;
+        m[10] = z;
+        return m;
+    }
+
+    public static float[] orthographic(float left, float right, float bottom, float top,
+                                       float near, float far) {
+        float[] out = new float[16];
+        out[0] = 2f / (right - left);
+        out[5] = 2f / (top - bottom);
+        out[10] = -2f / (far - near);
+        out[3] = -(right + left) / (right - left);
+        out[7] = -(top + bottom) / (top - bottom);
+        out[11] = -(far + near) / (far - near);
+        out[15] = 1f;
+        return out;
+    }
+
     
     public static float[] perspective(float fovyDeg, float aspect, float near, float far) {
         float f = (float) (1.0 / Math.tan(Math.toRadians(fovyDeg) / 2.0));

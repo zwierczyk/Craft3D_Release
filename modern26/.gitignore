@@ -5,9 +5,9 @@ classes/
 .idea/
 *.iml
 .cache/
-# Assety sa w repo jako jedno archiwum; rozpakowana kopia jest generowana:
 assets/minecraft/
 *.tar.gz
 *.whl
 *.tgz
 craft3d-toolchain.sh
+previews/

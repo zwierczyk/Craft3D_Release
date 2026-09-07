@@ -36,4 +36,26 @@ public final class World {
         }
         return -1;
     }
+
+    public boolean solidAt(double x, double y, double z) {
+        return get((int) Math.floor(x), (int) Math.floor(y), (int) Math.floor(z)) != BlockIds.AIR;
+    }
+
+    public boolean collidesBox(double minX, double minY, double minZ,
+                               double maxX, double maxY, double maxZ) {
+        int x0 = (int) Math.floor(minX);
+        int y0 = (int) Math.floor(minY);
+        int z0 = (int) Math.floor(minZ);
+        int x1 = (int) Math.floor(maxX - 1e-9);
+        int y1 = (int) Math.floor(maxY - 1e-9);
+        int z1 = (int) Math.floor(maxZ - 1e-9);
+        for (int y = y0; y <= y1; y++) {
+            for (int z = z0; z <= z1; z++) {
+                for (int x = x0; x <= x1; x++) {
+                    if (get(x, y, z) != BlockIds.AIR) return true;
+                }
+            }
+        }
+        return false;
+    }
 }

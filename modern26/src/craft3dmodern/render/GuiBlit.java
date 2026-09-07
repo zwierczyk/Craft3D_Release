@@ -86,6 +86,12 @@ public final class GuiBlit {
         this.screenH = Math.max(1, h);
     }
 
+    public void setGuiScale(float scale) {
+        this.guiScale = Math.max(1f, scale);
+    }
+
+    private float guiScale = 1f;
+
     public void begin() {
         program.use();
         ShaderProgram.uniform2f(program, "uScreen", screenW, screenH);
@@ -119,6 +125,10 @@ public final class GuiBlit {
                            float u0, float v0, float u1, float v1,
                            float r, float g, float b, float a) {
         if (textureId <= 0 || w <= 0 || h <= 0) return;
+        x *= guiScale;
+        y *= guiScale;
+        w *= guiScale;
+        h *= guiScale;
         setTint(r, g, b, a);
         float x1 = x + w;
         float y1 = y + h;

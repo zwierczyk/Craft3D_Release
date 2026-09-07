@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Testy headless (bez okna GL). Najpierw rozpakowuje assety.
+# Testy headless (bez okna GL). Najpierw rozpakowuje assety i kompiluje wszystko.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -13,23 +13,11 @@ else
     fi
 fi
 
-[ -d out/classes ] || ./build.sh >/dev/null
+./build.sh >/dev/null
 
 "$JAVA_BIN" -cp "out/classes:lib/*" craft3dmodern.test.AssetsExtractor
 
-mkdir -p out/testclasses
-find src -path "*test/*.java" > out/test-sources.txt
-
-if command -v javac >/dev/null 2>&1; then
-    javac -encoding UTF-8 -cp "out/classes" -d out/testclasses @out/test-sources.txt
-else
-    if [ -f "$TC" ]; then source "$TC"; else
-        echo "[test] brak javac i brak toolchaina"; exit 1
-    fi
-    "$JAVA" -cp "$ECJ" org.eclipse.jdt.internal.compiler.batch.Main \
-        -source 8 -target 8 -nowarn -cp "out/classes" -d out/testclasses @out/test-sources.txt
-fi
-
-"$JAVA_BIN" -cp "out/classes:out/testclasses:lib/*" craft3dmodern.test.AssetsTest
-"$JAVA_BIN" -cp "out/classes:out/testclasses:lib/*" craft3dmodern.test.FontTest
-"$JAVA_BIN" -cp "out/classes:out/testclasses:lib/*" craft3dmodern.test.WorldTest
+"$JAVA_BIN" -cp "out/classes:lib/*" craft3dmodern.test.AssetsTest
+"$JAVA_BIN" -cp "out/classes:lib/*" craft3dmodern.test.FontTest
+"$JAVA_BIN" -cp "out/classes:lib/*" craft3dmodern.test.WorldTest
+"$JAVA_BIN" -cp "out/classes:lib/*" craft3dmodern.test.GameplayTest

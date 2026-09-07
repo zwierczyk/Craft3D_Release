@@ -3,7 +3,6 @@ package craft3dmodern.world;
 import java.util.HashMap;
 import java.util.Map;
 
-
 public final class BlockIds {
     public static final int AIR = 0;
     public static final int STONE = 1;
@@ -14,15 +13,21 @@ public final class BlockIds {
     public static final int GRASS_BLOCK = 6;
     public static final int OAK_LOG = 7;
     public static final int OAK_LEAVES = 8;
+    public static final int BRICKS = 9;
+    public static final int STONE_BRICKS = 10;
+    public static final int GLASS = 11;
 
-    
     public static final int TINT_GRASS = 0xFF91BD59;
-    
-    public static final int TINT_FOLIAGE = 0xFF6AA234;
+    public static final int TINT_FOLIAGE = 0xFF77AB2F;
+
+    public static final int[] HOTBAR = {
+        STONE, COBBLESTONE, GRASS_BLOCK, DIRT, SAND,
+        OAK_PLANKS, OAK_LOG, BRICKS, GLASS
+    };
 
     private static final String[] NAMES = {
         "air", "stone", "dirt", "sand", "cobblestone", "oak_planks",
-        "grass_block", "oak_log", "oak_leaves"
+        "grass_block", "oak_log", "oak_leaves", "bricks", "stone_bricks", "glass"
     };
     private static final Map<String, Integer> BY_NAME = new HashMap<String, Integer>();
     private static final int[] TINTS = new int[NAMES.length];
@@ -49,12 +54,10 @@ public final class BlockIds {
         return NAMES[id];
     }
 
-    
     public static boolean occludes(int id) {
-        return id != AIR;
+        return id != AIR && id != GLASS;
     }
 
-    
     public static int tintRgb(int id) {
         if (id < 0 || id >= NAMES.length) return 0xFFFFFF;
         int t = TINTS[id];

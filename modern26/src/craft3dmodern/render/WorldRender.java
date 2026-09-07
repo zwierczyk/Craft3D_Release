@@ -11,7 +11,6 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
-
 public final class WorldRender {
     private final ShaderProgram program;
     private final int vao;
@@ -25,23 +24,33 @@ public final class WorldRender {
                 "layout(location=1) in vec2 aUv;\n" +
                 "layout(location=2) in vec3 aColor;\n" +
                 "uniform mat4 uMvp;\n" +
+                "uniform vec3 uEye;\n" +
                 "out vec2 vUv;\n" +
                 "out vec3 vColor;\n" +
+                "out float vDist;\n" +
                 "void main() {\n" +
                 "  gl_Position = uMvp * vec4(aPos, 1.0);\n" +
                 "  vUv = aUv;\n" +
                 "  vColor = aColor;\n" +
+                "  vDist = distance(aPos, uEye);\n" +
                 "}\n";
         String fs =
                 "#version 330 core\n" +
                 "uniform sampler2D uTex;\n" +
+                "uniform vec3 uFogColor;\n" +
+                "uniform float uFogStart;\n" +
+                "uniform float uFogEnd;\n" +
+                "uniform float uBright;\n" +
                 "in vec2 vUv;\n" +
                 "in vec3 vColor;\n" +
+                "in float vDist;\n" +
                 "out vec4 fragColor;\n" +
                 "void main() {\n" +
                 "  vec4 c = texture(uTex, vUv);\n" +
-                "  if (c.a < 0.15) discard;\n" + 
-                "  fragColor = vec4(c.rgb * vColor, 1.0);\n" +
+                "  if (c.a < 0.15) discard;\n" +
+                "  vec3 lit = c.rgb * vColor * uBright;\n" +
+                "  float fog = clamp((vDist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);\n" +
+                "  fragColor = vec4(mix(lit, uFogColor, fog), 1.0);\n" +
                 "}\n";
         program = ShaderProgram.create(vs, fs);
         program.use();
@@ -62,7 +71,6 @@ public final class WorldRender {
         GL30.glBindVertexArray(0);
     }
 
-    
     public static final class MeshVertex {
         public static final int FLOATS = 8;
         private MeshVertex() {}
@@ -82,10 +90,16 @@ public final class WorldRender {
         return vertexCount;
     }
 
-    
-    public void render(java.nio.FloatBuffer mvpColMajor) {
+    public void render(FloatBuffer mvp, float eyeX, float eyeY, float eyeZ,
+                       float fogR, float fogG, float fogB, float bright) {
         program.use();
-        program.uniformMat4("uMvp", mvpColMajor);
+        program.uniformMat4("uMvp", mvp);
+        org.lwjgl.opengl.GL20.glUniform3f(program.uniform("uEye"), eyeX, eyeY, eyeZ);
+        org.lwjgl.opengl.GL20.glUniform3f(program.uniform("uFogColor"), fogR, fogG, fogB);
+        org.lwjgl.opengl.GL20.glUniform1f(program.uniform("uFogStart"), 50f);
+        org.lwjgl.opengl.GL20.glUniform1f(program.uniform("uFogEnd"), 180f);
+        org.lwjgl.opengl.GL20.glUniform1f(program.uniform("uBright"),
+                Math.max(0.25f, bright));
         GL30.glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLES, 0, vertexCount);
         GL30.glBindVertexArray(0);

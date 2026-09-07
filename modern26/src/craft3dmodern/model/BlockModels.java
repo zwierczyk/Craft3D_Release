@@ -243,20 +243,31 @@ public final class BlockModels {
         if (!ref.startsWith("#")) return normalizeTex(ref);
         Set<String> seen = new HashSet<String>();
         String cur = ref.substring(1);
-        while (seen.add(cur)) {
+        while (true) {
             String val = null;
             for (Map<String, Object> m : chain) {
                 Object t = m.get("textures");
                 if (t instanceof Map && ((Map<?, ?>) t).containsKey(cur)) {
                     Object v = ((Map<?, ?>) t).get(cur);
-                    if (v instanceof String) { val = (String) v; break; }
+                    if (v instanceof String) {
+                        val = (String) v;
+                        break;
+                    }
+                    if (v instanceof Map) {
+                        Object sprite = ((Map<?, ?>) v).get("sprite");
+                        if (sprite instanceof String) {
+                            val = (String) sprite;
+                            break;
+                        }
+                    }
                 }
             }
             if (val == null) return null;
-            if (val.startsWith("#")) { cur = val.substring(1); continue; }
-            return normalizeTex(val);
+            if (!val.startsWith("#")) return normalizeTex(val);
+            String alias = val.substring(1);
+            if (!seen.add(cur)) return null;
+            cur = alias;
         }
-        return null;
     }
 
     private static String normalizeTex(String v) {

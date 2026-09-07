@@ -71,6 +71,8 @@ public final class Main {
         boolean havePrev = false;
         double[] mx = new double[1], my = new double[1];
         int[] fw = new int[1], fh = new int[1];
+        final int[] scroll = new int[1];
+        glfwSetScrollCallback(window, (w, xo, yo) -> scroll[0] += (int) yo);
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
@@ -98,15 +100,29 @@ public final class Main {
             havePrev = true;
 
             in.leftDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+            in.rightDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+            in.middleDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
             in.escDown = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
             in.forward = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
             in.back = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
             in.strafeLeft = glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS;
             in.strafeRight = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
-            in.up = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
-            in.down = glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS;
-            in.sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+            in.jump = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+            in.sneak = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+            in.sprint = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
             in.regen = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
+            in.hotbar = 0;
+            if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) in.hotbar = 1;
+            if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) in.hotbar = 2;
+            if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) in.hotbar = 3;
+            if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS) in.hotbar = 4;
+            if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS) in.hotbar = 5;
+            if (glfwGetKey(window, GLFW_KEY_6) == GLFW_PRESS) in.hotbar = 6;
+            if (glfwGetKey(window, GLFW_KEY_7) == GLFW_PRESS) in.hotbar = 7;
+            if (glfwGetKey(window, GLFW_KEY_8) == GLFW_PRESS) in.hotbar = 8;
+            if (glfwGetKey(window, GLFW_KEY_9) == GLFW_PRESS) in.hotbar = 9;
+            in.wheel = scroll[0];
+            scroll[0] = 0;
 
             glClearColor(0.106f, 0.106f, 0.118f, 1f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
