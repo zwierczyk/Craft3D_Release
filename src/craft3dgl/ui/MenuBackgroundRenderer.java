@@ -57,9 +57,11 @@ public final class MenuBackgroundRenderer {
         glLoadIdentity();
         glRotated(180.0, 1.0, 0.0, 0.0);
         glRotated(90.0, 0.0, 0.0, 1.0);
-        double elapsed = (System.currentTimeMillis() - animationStart) / 1000.0;
-        glRotated(20.0 + Math.sin(elapsed * 0.15) * 5.0, 1.0, 0.0, 0.0);
-        glRotated(-elapsed * 6.0, 0.0, 1.0, 0.0);
+        // GuiMainMenu.drawPanorama z MCP 9.40: panoramaTimer rosnaca o 1 co tick
+        // (20/s), pochylenie = sin(timer/400)*25+20 stopni, obrot Y = -timer*0.1.
+        double timer = (System.currentTimeMillis() - animationStart) / 50.0;
+        glRotated(20.0 + Math.sin(timer / 400.0) * 25.0, 1.0, 0.0, 0.0);
+        glRotated(-timer * 0.1, 0.0, 1.0, 0.0);
 
         for (int side = 0; side < 6; side++) {
             if (PANORAMA[side] <= 0) continue;

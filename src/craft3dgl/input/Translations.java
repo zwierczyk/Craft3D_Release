@@ -55,7 +55,7 @@ public final class Translations {
         map.put("settings.sounds", new String[]{"Dźwięki", "Sounds"});
         map.put("settings.language", new String[]{"Język", "Language"});
         map.put("settings.done", new String[]{"Gotowe", "Done"});
-        map.put("settings.master", new String[]{"Master", "Master"});
+        map.put("settings.master", new String[]{"Głośność ogólna", "Master Volume"});
         map.put("settings.music", new String[]{"Muzyka", "Music"});
         map.put("settings.blocks", new String[]{"Bloki", "Blocks"});
         map.put("settings.hostile", new String[]{"Wrogie", "Hostile"});
@@ -63,6 +63,15 @@ public final class Translations {
         map.put("settings.players", new String[]{"Gracze", "Players"});
         map.put("settings.ambient", new String[]{"Otoczenie", "Ambient"});
         map.put("settings.ui", new String[]{"UI / Kliknięcia", "UI / Clicks"});
+        map.put("options.title", new String[]{"Opcje", "Options"});
+        map.put("options.sounds", new String[]{"Muzyka i dźwięk...", "Music & Sound Settings..."});
+        map.put("options.language", new String[]{"Język...", "Language..."});
+        map.put("options.video", new String[]{"Grafika...", "Video Settings..."});
+        map.put("options.controls", new String[]{"Sterowanie...", "Controls..."});
+        map.put("options.resourcepack", new String[]{"Pakiety zasobów...", "Resource Packs..."});
+        map.put("options.snooper.view", new String[]{"Ustawienia Snoopera", "Snooper Settings"});
+        map.put("options.sounds.title", new String[]{"Muzyka i dźwięk", "Music & Sound Options"});
+        map.put("options.off", new String[]{"WYŁ", "OFF"});
         map.put("creative.title", new String[]{"Ekwipunek trybu kreatywnego", "Creative Inventory"});
         map.put("creative.trash", new String[]{"Wyrzuć tu (czyści)", "Trash here (clears)"});
         map.put("creative.clearall", new String[]{"Wyczyść cały ekwipunek", "Clear Inventory"});

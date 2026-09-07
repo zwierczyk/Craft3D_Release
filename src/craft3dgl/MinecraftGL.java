@@ -288,6 +288,7 @@ public class MinecraftGL {
     /** GameRenderer - laduje core shadery raz na start. */
     final craft3dgl.blaze3d.renderer.GameRenderer gameRenderer = craft3dgl.blaze3d.renderer.GameRenderer.getInstance();
     boolean menuMouseWasDown = false;
+    boolean menuEscWasDown = false;
     boolean deathScreen = false;
     boolean deathMouseWasDown = false;
     boolean deathDropsDone = false;
@@ -399,6 +400,11 @@ public class MinecraftGL {
 
     int settingsTab = 0;
     int draggingSlider = -1;
+
+    // Kolejnosc kategorii dzwieku jak w vanilla GuiScreenOptionsSounds (SoundCategory).
+    static final String[] SOUND_CATS = {"music", "blocks", "hostile", "animals", "players", "ambient", "ui"};
+    static final String[] SOUND_CAT_KEYS = {"settings.music", "settings.blocks", "settings.hostile",
+            "settings.animals", "settings.players", "settings.ambient", "settings.ui"};
 
     long lastClickTime = 0;
     int lastClickItem = 0;
@@ -1403,10 +1409,19 @@ public class MinecraftGL {
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
         int mx = (int) mxA[0], my = (int) myA[0];
-        if (mouse && !menuMouseWasDown) {
-            if (menuScreen == 0) handleMainMenuClick(mx, my);
-            else if (menuScreen == 1) handleWorldMenuClick(mx, my);
-            else handleMainOptionsClick(mx, my);
+        boolean esc = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+        if (esc && !menuEscWasDown) {
+            // GuiScreen.keyTyped z MCP 9.40: ESC cofa sie o jeden ekran.
+            if (menuScreen == 3 || menuScreen == 4) menuScreen = 2; // sounds/language -> options
+            else if (menuScreen == 1 || menuScreen == 2) menuScreen = 0; // world/options -> main
+        }
+        menuEscWasDown = esc;
+        if (menuScreen == 0) {
+            if (mouse && !menuMouseWasDown) handleMainMenuClick(mx, my);
+        } else if (menuScreen == 1) {
+            if (mouse && !menuMouseWasDown) handleWorldMenuClick(mx, my);
+        } else {
+            updateMainOptionsScreen(mouse, mx, my); // menuScreen 2 = options, 3 = sounds, 4 = language
         }
         menuMouseWasDown = mouse;
     }
@@ -1432,20 +1447,25 @@ public class MinecraftGL {
         }
     }
 
-    void handleMainOptionsClick(int mx, int my) {
-        int bw = 400, bh = 40;
-        int bx = width / 2 - bw / 2;
-        int by = height / 4 + 80;
-        if (inside(mx, my, bx, by, bw, bh)) {
-            double next = sound.masterVolume <= 0.01 ? 1.0 : Math.max(0.0, sound.masterVolume - 0.25);
-            sound.setVolume(next);
-            if (sound.enabled) sound.playClick();
-        } else if (inside(mx, my, bx, by + 48, bw, bh)) {
-            language = "en".equals(language) ? "pl" : "en";
-            sound.playClick();
-        } else if (inside(mx, my, bx, by + 144, bw, bh)) {
-            menuScreen = 0;
-            sound.playClick();
+    void updateMainOptionsScreen(boolean left, int mx, int my) {
+        // menuScreen: 2 = GuiOptions, 3 = GuiScreenOptionsSounds, 4 = GuiLanguage
+        boolean rising = left && !menuMouseWasDown;
+        if (menuScreen == 2) {
+            if (!rising) return;
+            if (inside(mx, my, width / 2 - 310, 204, 300, 40)) {
+                menuScreen = 3;
+                if (sound.enabled) sound.playClick();
+            } else if (inside(mx, my, width / 2 + 10, 204, 300, 40)) {
+                menuScreen = 4;
+                if (sound.enabled) sound.playClick();
+            } else if (inside(mx, my, width / 2 - 200, 456, 400, 40)) {
+                menuScreen = 0;
+                if (sound.enabled) sound.playClick();
+            }
+        } else if (menuScreen == 3) {
+            updateSoundSliders(left, mx, my, rising);
+        } else {
+            updateLanguageClicks(left, mx, my);
         }
     }
 
@@ -1519,16 +1539,9 @@ public class MinecraftGL {
     }
 
     void drawMainOptions() {
-        int bw = 400, bh = 40;
-        int bx = width / 2 - bw / 2;
-        int by = height / 4 + 80;
-        fontRenderer.drawVanillaText(tr("settings.title"),
-                width / 2 - FontRenderer.mcTextWidth(tr("settings.title"), 2) / 2, 30, 2, 1f);
-        drawButton(bx, by, bw, bh,
-                tr("settings.master") + ": " + sound.volumePercent() + "%");
-        drawButton(bx, by + 48, bw, bh,
-                tr("settings.language") + ": " + ("en".equals(language) ? "English" : "Polski"));
-        drawButton(bx, by + 144, bw, bh, tr("settings.done"));
+        if (menuScreen == 2) drawOptionsRoot();
+        else if (menuScreen == 3) drawSoundOptions();
+        else drawLanguageOptions();
     }
 
     void drawWorldMenu() {
@@ -1916,12 +1929,13 @@ public class MinecraftGL {
         glfwGetCursorPos(window, mxA, myA);
         int mx = (int) mxA[0], my = (int) myA[0];
         if (esc && !escWasDown) {
-            if (pauseScreen == 1) pauseScreen = 0;
+            if (pauseScreen == 2 || pauseScreen == 3) pauseScreen = 1;
+            else if (pauseScreen == 1) pauseScreen = 0;
             else resumeGame();
             return;
         }
-        if (pauseScreen == 1) {
-            updateSettingsScreen(left, mx, my);
+        if (pauseScreen >= 1) {
+            updatePauseOptions(left, mx, my);
             pauseMouseWasDown = left;
             return;
         }
@@ -1949,62 +1963,84 @@ public class MinecraftGL {
         pauseMouseWasDown = left;
     }
 
-    void updateSettingsScreen(boolean left, int mx, int my) {
-        int panelW = 620, panelH = 420;
-        int px = width / 2 - panelW / 2;
-        int py = height / 2 - panelH / 2;
-        String[] tabKeys = {"settings.title", "settings.sounds", "settings.language"};
-        int tabW = (panelW - 32) / 3;
-        for (int i = 0; i < 3; i++) {
-            int tx = px + 16 + i * tabW;
-            int ty = py + 36;
-            if (left && !pauseMouseWasDown && inside(mx, my, tx, ty, tabW - 4, 30)) {
-                settingsTab = i;
-                sound.playClick();
-                return;
+    void updatePauseOptions(boolean left, int mx, int my) {
+        // pauseScreen: 1 = GuiOptions, 2 = GuiScreenOptionsSounds, 3 = GuiLanguage
+        boolean rising = left && !pauseMouseWasDown;
+        if (pauseScreen == 1) {
+            if (!rising) return;
+            if (inside(mx, my, width / 2 - 310, 204, 300, 40)) {
+                pauseScreen = 2;
+                if (sound.enabled) sound.playClick();
+            } else if (inside(mx, my, width / 2 + 10, 204, 300, 40)) {
+                pauseScreen = 3;
+                if (sound.enabled) sound.playClick();
+            } else if (inside(mx, my, width / 2 - 200, 456, 400, 40)) {
+                pauseScreen = 0;
+                if (sound.enabled) sound.playClick();
             }
+        } else if (pauseScreen == 2) {
+            updateSoundSliders(left, mx, my, rising);
+        } else {
+            updateLanguageClicks(left, mx, my);
         }
-        int bw = 220, bh = 40;
-        int bx = px + panelW / 2 - bw / 2;
-        int by = py + panelH - 60;
-        if (left && !pauseMouseWasDown && inside(mx, my, bx, by, bw, bh)) {
-            pauseScreen = 0;
-            sound.playClick();
+    }
+
+    /** Suwaki glosnosci w ukladzie GuiScreenOptionsSounds z MCP 9.40. */
+    void updateSoundSliders(boolean left, int mx, int my, boolean rising) {
+        if (rising && inside(mx, my, width / 2 - 200, 456, 400, 40)) {
+            if (pauseScreen >= 1) pauseScreen = 1;
+            else menuScreen = 2;
+            if (sound.enabled) sound.playClick();
             return;
         }
-        if (settingsTab == 0) {
-            int sliderX = px + 80;
-            int sliderY = py + 130;
-            int sliderW = panelW - 160;
-            if (left && (draggingVolume || inside(mx, my, sliderX - 8, sliderY - 14, sliderW + 16, 32))) {
-                draggingVolume = true;
-                double v = (mx - sliderX) / (double) sliderW;
-                v = Math.round(clamp(v, 0, 1) * 100.0) / 100.0;
-                sound.setVolume(v);
-            }
-            if (!left) draggingVolume = false;
-        } else if (settingsTab == 1) {
-            String[] cats = {"music", "blocks", "hostile", "animals", "players", "ambient", "ui"};
-            int sliderX = px + 220;
-            int sliderW = panelW - 280;
-            for (int i = 0; i < cats.length; i++) {
-                int sy = py + 90 + i * 36;
-                if (left && (draggingSlider == i || (draggingSlider == -1 && inside(mx, my, sliderX - 6, sy - 4, sliderW + 12, 22)))) {
-                    draggingSlider = i;
-                    double v = (mx - sliderX) / (double) sliderW;
-                    v = Math.round(clamp(v, 0, 1) * 100.0) / 100.0;
-                    sound.setCategoryVolume(cats[i], v);
+        if (!left) {
+            draggingSlider = -1;
+            return;
+        }
+        int s = 2; // gui scale (h=40 -> knob 8 wide)
+        int active = draggingSlider;
+        if (active == -1) {
+            // master (full width)
+            if (inside(mx, my, width / 2 - 310, 96, 620, 40)) active = 0;
+            else {
+                String[] cats = SOUND_CATS;
+                for (int i = 0; i < cats.length; i++) {
+                    int row = i >> 1, col = i & 1;
+                    int sx = col == 0 ? width / 2 - 310 : width / 2 + 10;
+                    int sy = 144 + row * 48;
+                    if (inside(mx, my, sx, sy, 300, 40)) { active = 1 + i; break; }
                 }
             }
-            if (!left) draggingSlider = -1;
-        } else if (settingsTab == 2) {
-            int lbw = 200, lbh = 50;
-            int lbx = px + 60;
-            int lby = py + 120;
-            if (left && !pauseMouseWasDown) {
-                if (inside(mx, my, lbx, lby, lbw, lbh)) { language = "pl"; sound.playClick(); }
-                else if (inside(mx, my, lbx + lbw + 40, lby, lbw, lbh)) { language = "en"; sound.playClick(); }
-            }
+            if (active == -1) return;
+            draggingSlider = active;
+        }
+        if (active == 0) {
+            double v = (mx - (width / 2 - 310 + 8)) / (double) (620 - 16);
+            sound.setVolume(Math.round(clamp(v, 0, 1) * 100.0) / 100.0);
+        } else {
+            int i = active - 1;
+            int col = i & 1;
+            int sx = col == 0 ? width / 2 - 310 : width / 2 + 10;
+            double v = (mx - (sx + 8)) / (double) (300 - 16);
+            sound.setCategoryVolume(SOUND_CATS[i], Math.round(clamp(v, 0, 1) * 100.0) / 100.0);
+        }
+    }
+
+    /** Wybor jezyka w ukladzie listy GuiLanguage z MCP 9.40. */
+    void updateLanguageClicks(boolean left, int mx, int my) {
+        if (!left) return;
+        boolean rising = pauseScreen >= 1 ? !pauseMouseWasDown : !menuMouseWasDown;
+        if (!rising) return;
+        if (inside(mx, my, width / 2 - 160, 150, 320, 44)) {
+            language = "pl";
+            if (sound.enabled) sound.playClick();
+        } else if (inside(mx, my, width / 2 - 160, 200, 320, 44)) {
+            language = "en";
+            if (sound.enabled) sound.playClick();
+        } else if (inside(mx, my, width / 2 - 200, 644, 400, 40)) {
+            if (pauseScreen >= 1) pauseScreen = 1;
+            else menuScreen = 2;
+            if (sound.enabled) sound.playClick();
         }
     }
 
@@ -5668,7 +5704,7 @@ public class MinecraftGL {
         glColor4f(0.063f, 0.063f, 0.063f, 0.75f); glVertex2i(0, 0); glVertex2i(width, 0);
         glColor4f(0.063f, 0.063f, 0.063f, 0.82f); glVertex2i(width, height); glVertex2i(0, height);
         glEnd();
-        if (pauseScreen == 1) drawSettingsOverlay();
+        if (pauseScreen >= 1) drawSettingsOverlay();
         else drawPauseButtons();
         glDisable(GL_BLEND);
         glColor4f(1,1,1,1);
@@ -5694,57 +5730,72 @@ public class MinecraftGL {
     }
 
     void drawSettingsOverlay() {
-        int panelW = 620, panelH = 420;
-        int px = width / 2 - panelW / 2;
-        int py = height / 2 - panelH / 2;
-        glColor4f(0.03f, 0.03f, 0.04f, 0.80f); quad(px, py, panelW, panelH);
-        glColor4f(0.80f, 0.80f, 0.86f, 0.50f); lineRect(px, py, panelW, panelH);
-        drawCenteredText(tr("settings.title"), px + panelW / 2, py + 12, 0.90f);
-        String[] tabLabels = {tr("settings.title"), tr("settings.sounds"), tr("settings.language")};
-        int tabW = (panelW - 32) / 3;
-        for (int i = 0; i < 3; i++) {
-            int tx = px + 16 + i * tabW;
-            int ty = py + 36;
-            glColor4f(i == settingsTab ? 0.30f : 0.15f, i == settingsTab ? 0.30f : 0.15f, i == settingsTab ? 0.32f : 0.17f, 1f);
-            quad(tx, ty, tabW - 4, 30);
-            glColor4f(0.85f, 0.85f, 0.88f, 1f); lineRect(tx, ty, tabW - 4, 30);
-            drawCenteredText(tabLabels[i], tx + (tabW - 4) / 2, ty + 6, 0.55f);
+        if (pauseScreen == 1) drawOptionsRoot();
+        else if (pauseScreen == 2) drawSoundOptions();
+        else drawLanguageOptions();
+    }
+
+    /** GuiOptions z MCP 9.40 (tytul + wiersze przyciskow 150x20 w skali GUI 2). */
+    void drawOptionsRoot() {
+        String title = tr("options.title");
+        fontRenderer.drawVanillaText(title,
+                width / 2 - FontRenderer.mcTextWidth(title, 2) / 2, 30, 2, 1f);
+        drawButton(width / 2 - 310, 204, 300, 40, tr("options.sounds"));
+        drawButton(width / 2 + 10, 204, 300, 40, tr("options.language"));
+        MenuButton.drawButtonState(fontRenderer, width / 2 - 310, 252, 300, 40, tr("options.video"), 3);
+        MenuButton.drawButtonState(fontRenderer, width / 2 + 10, 252, 300, 40, tr("options.controls"), 3);
+        MenuButton.drawButtonState(fontRenderer, width / 2 - 310, 300, 300, 40, tr("options.resourcepack"), 3);
+        MenuButton.drawButtonState(fontRenderer, width / 2 + 10, 300, 300, 40, tr("options.snooper.view"), 3);
+        drawButton(width / 2 - 200, 456, 400, 40, tr("settings.done"));
+    }
+
+    /** GuiScreenOptionsSounds z MCP 9.40 - suwaki glosnosci. */
+    void drawSoundOptions() {
+        String title = tr("options.sounds.title");
+        fontRenderer.drawVanillaText(title,
+                width / 2 - FontRenderer.mcTextWidth(title, 2) / 2, 30, 2, 1f);
+        drawSoundSlider(width / 2 - 310, 96, 620, 40,
+                tr("settings.master") + ": " + volumeText(sound.masterVolume), sound.masterVolume);
+        for (int i = 0; i < SOUND_CATS.length; i++) {
+            int row = i >> 1, col = i & 1;
+            int sx = col == 0 ? width / 2 - 310 : width / 2 + 10;
+            int sy = 144 + row * 48;
+            String label = tr(SOUND_CAT_KEYS[i]) + ": " + volumeText(sound.catVol(SOUND_CATS[i]));
+            drawSoundSlider(sx, sy, 300, 40, label, sound.catVol(SOUND_CATS[i]));
         }
-        if (settingsTab == 0) {
-            int sliderX = px + 80;
-            int sliderY = py + 130;
-            int sliderW = panelW - 160;
-            drawText(tr("settings.master") + ": " + sound.volumePercent() + "%", sliderX, sliderY - 30, 0.65f);
-            drawVolumeSlider(sliderX, sliderY, sliderW, 18, sound.masterVolume);
-        } else if (settingsTab == 1) {
-            String[] cats = {"music", "blocks", "hostile", "animals", "players", "ambient", "ui"};
-            String[] catKeys = {"settings.music", "settings.blocks", "settings.hostile", "settings.animals", "settings.players", "settings.ambient", "settings.ui"};
-            int sliderX = px + 220;
-            int sliderW = panelW - 280;
-            for (int i = 0; i < cats.length; i++) {
-                int sy = py + 90 + i * 36;
-                drawText(tr(catKeys[i]), px + 30, sy - 2, 0.55f);
-                int pct = (int) Math.round(sound.catVol(cats[i]) * 100);
-                drawText(pct + "%", px + panelW - 60, sy - 2, 0.55f);
-                drawVolumeSlider(sliderX, sy, sliderW, 14, sound.catVol(cats[i]));
-            }
-        } else if (settingsTab == 2) {
-            int lbw = 200, lbh = 50;
-            int lbx = px + 60;
-            int lby = py + 120;
-            glColor4f(language.equals("pl") ? 0.30f : 0.15f, language.equals("pl") ? 0.45f : 0.15f, language.equals("pl") ? 0.30f : 0.17f, 1f);
-            quad(lbx, lby - 6, lbw, lbh);
-            glColor4f(0.85f, 0.85f, 0.88f, 1f); lineRect(lbx, lby - 6, lbw, lbh);
-            drawCenteredText("Polski", lbx + lbw / 2, lby + 10, 0.78f);
-            glColor4f(language.equals("en") ? 0.30f : 0.15f, language.equals("en") ? 0.45f : 0.15f, language.equals("en") ? 0.30f : 0.17f, 1f);
-            quad(lbx + lbw + 40, lby - 6, lbw, lbh);
-            glColor4f(0.85f, 0.85f, 0.88f, 1f); lineRect(lbx + lbw + 40, lby - 6, lbw, lbh);
-            drawCenteredText("English", lbx + lbw + 40 + lbw / 2, lby + 10, 0.78f);
-        }
-        int bw = 220, bh = 40;
-        int bx = px + panelW / 2 - bw / 2;
-        int by = py + panelH - 60;
-        drawButton(bx, by, bw, bh, tr("settings.done"));
+        drawButton(width / 2 - 200, 456, 400, 40, tr("settings.done"));
+    }
+
+    /** GuiLanguage z MCP 9.40 - lista jezykow (Polski / English). */
+    void drawLanguageOptions() {
+        String title = tr("options.language");
+        fontRenderer.drawVanillaText(title,
+                width / 2 - FontRenderer.mcTextWidth(title, 2) / 2, 32, 2, 1f);
+        drawButton(width / 2 - 160, 150, 320, 44, "Polski");
+        drawButton(width / 2 - 160, 200, 320, 44, "English");
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(1f, 1f, 1f, 0.35f);
+        glDisable(GL_TEXTURE_2D);
+        int selY = "pl".equals(language) ? 150 : 200;
+        quad(width / 2 - 160, selY, 320, 44);
+        glEnable(GL_TEXTURE_2D);
+        glDisable(GL_BLEND);
+        glColor4f(1f, 1f, 1f, 1f);
+        drawButton(width / 2 - 200, 644, 400, 40, tr("settings.done"));
+    }
+
+    String volumeText(double v) {
+        return v <= 0.005 ? tr("options.off") : Math.round(v * 100) + "%";
+    }
+
+    /** Suwak w stylu vanilla: tlo buttona disabled + 8px galek z widgets.png (jak GuiButton#mouseDragged). */
+    void drawSoundSlider(int x, int y, int w, int h, String label, double value) {
+        MenuButton.drawButtonState(fontRenderer, x, y, w, h, label, 3);
+        int s = Math.max(1, Math.round(h / 20f));
+        int knobX = x + (int) Math.round(value * (w - 8 * s));
+        MenuButton.drawWidgetSource(knobX, y, 4 * s, h, 0, 66, 4, 20);
+        MenuButton.drawWidgetSource(knobX + 4 * s, y, 4 * s, h, 196, 66, 4, 20);
     }
 
     void drawVolumeSlider(int x, int y, int w, int h, double value) {

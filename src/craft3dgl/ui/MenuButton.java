@@ -97,6 +97,22 @@ public final class MenuButton {
         glEnd();
     }
 
+    /**
+     * Dowolny wycinek widgets.png (np. polowki galki suwaka 4x20) narysowany w
+     * rozmiarze destW x destH. Uzywane przez suwaki GuiScreenOptionsSounds.
+     */
+    public static void drawWidgetSource(int x, int y, int destW, int destH,
+                                        int srcX, int srcY, int srcW, int srcH) {
+        ensureLoaded();
+        if (widgets <= 0) return;
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(1f, 1f, 1f, 1f);
+        glBindTexture(GL_TEXTURE_2D, widgets);
+        drawRegion(x, y, destW, destH, srcX, srcY, srcW, srcH);
+    }
+
     public static int drawButtonAuto(FontRenderer font, int centerX, int y, String text,
                                      float textScale, int state) {
         int width = Math.max(120, FontRenderer.textWidth(text, textScale) + 48);
