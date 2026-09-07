@@ -34,6 +34,7 @@ public final class BlockTextures {
         if (id == DOOR_BOTTOM) return 12;
         if (id == DOOR_TOP) return 13;
         if (id == CHEST) return dir == 2 || dir == 3 ? 14 : 15;
+        if (id == GLASS) return 23;
         if (id == FARMLAND) return dir == 2 ? 16 : 2;
         if (id == TALL_GRASS) return 17;
         if (id == WHEAT_0) return 18;

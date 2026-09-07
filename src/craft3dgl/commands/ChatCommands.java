@@ -35,7 +35,7 @@ public final class ChatCommands {
             "fps", "rebuild", "rebuildvillages", "help"
     };
     private static final String[] GIVE_ITEMS = {
-            "grass", "dirt", "stone", "wood", "leaves", "sand", "planks",
+            "grass", "dirt", "stone", "wood", "leaves", "sand", "planks", "glass",
             "crafting_table", "door", "chest", "water", "stick",
             "wood_pickaxe", "stone_pickaxe", "wood_axe", "stone_axe",
             "wood_shovel", "stone_shovel", "wood_sword", "stone_sword",

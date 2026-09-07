@@ -28,6 +28,7 @@ public final class WorldConstants {
     public static final int DOOR_BOTTOM = 16;
     public static final int DOOR_TOP = 17;
     public static final int CHEST = 18;
+    public static final int GLASS = 31;
 
     // Farming blocks
     public static final int FARMLAND = 50;
@@ -72,6 +73,6 @@ public final class WorldConstants {
 
     /** Czy id reprezentuje blok stawialny (nie item). */
     public static boolean isBlockItem(int id) {
-        return (id >= GRASS && id <= CRAFTING_TABLE) || id == DOOR_BOTTOM || id == CHEST;
+        return (id >= GRASS && id <= CRAFTING_TABLE) || id == DOOR_BOTTOM || id == CHEST || id == GLASS;
     }
 }

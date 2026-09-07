@@ -27,7 +27,7 @@ public final class LightEngine {
     public static int lightOpacity(int id) {
         if (id == AIR || id == TALL_GRASS
                 || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3
-                || id == DOOR_BOTTOM || id == DOOR_TOP || id == CHEST) return 0;
+                || id == DOOR_BOTTOM || id == DOOR_TOP || id == CHEST || id == GLASS) return 0;
         if (id == LEAVES) return 1;
         if (id == WATER) return 3;
         return 15;

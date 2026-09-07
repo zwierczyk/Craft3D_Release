@@ -25,7 +25,7 @@ public final class ItemRegistry {
 
     /** Drop dla zniszczonego bloku. */
     public static int dropForBlock(int block) {
-        if (block == WATER) return AIR;
+        if (block == WATER || block == GLASS) return AIR;
         if (block == GRASS) return DIRT;
         if (block == DOOR_BOTTOM || block == DOOR_TOP) return DOOR_BOTTOM;
         if (block == FARMLAND) return DIRT;

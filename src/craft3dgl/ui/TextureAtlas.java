@@ -70,6 +70,7 @@ public final class TextureAtlas {
         makeTilePng(img, 20, "wheat_2", 0x9fb83a, 0x6f9c32, "wheat_2");
         makeTilePng(img, 21, "wheat_3", 0xe8c248, 0xa68830, "wheat_3");
         makeTilePng(img, 22, "craft_front", 0x965f2d, 0x4c2d18, "craft_side");
+        makeTilePng(img, 23, "glass", 0xcfe8ec, 0x92b6bd, "glass");
 
         int tex = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, tex);

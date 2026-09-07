@@ -172,6 +172,8 @@ final class SoundEngine {
             case MinecraftGL.DOOR_TOP:
             case MinecraftGL.CHEST:
                 return "block.wood." + action;        // SoundType.WOOD
+            case MinecraftGL.GLASS:
+                return "block.glass." + action;        // SoundType.GLASS
             case MinecraftGL.WATER:
                 return "entity.player.splash";
             default:

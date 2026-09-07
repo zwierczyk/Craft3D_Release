@@ -69,6 +69,7 @@ public class MinecraftGL {
     public static final int DOOR_BOTTOM = 16;
     public static final int DOOR_TOP = 17;
     public static final int CHEST = 18;
+    public static final int GLASS = 31;
     // ====== FARMING ======
     public static final int FARMLAND = 50;        // ziemia po motyce
     public static final int TALL_GRASS = 51;      // dekoracyjna trawka, daje seeds
@@ -294,6 +295,7 @@ public class MinecraftGL {
     boolean villagerTradeOpen = false;
     boolean villagerMouseWasDown = false;
     VillagerGL tradingVillager = null;
+    int selectedVillagerTrade = 0;
     int pauseScreen = 0;
     boolean pauseMouseWasDown = false;
     boolean draggingVolume = false;
@@ -412,7 +414,7 @@ public class MinecraftGL {
     int creativeTab = 0;
     StringBuilder creativeSearch = new StringBuilder();
     boolean backspaceWasDown = false;
-    static final int[] CREATIVE_ITEMS = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, CRAFTING_TABLE, DOOR_BOTTOM, CHEST, WATER, FARMLAND, TALL_GRASS, ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE, ITEM_SEEDS, ITEM_WHEAT, ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_EMERALD, ITEM_BREAD};
+    static final int[] CREATIVE_ITEMS = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, GLASS, CRAFTING_TABLE, DOOR_BOTTOM, CHEST, WATER, FARMLAND, TALL_GRASS, ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE, ITEM_SEEDS, ITEM_WHEAT, ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_EMERALD, ITEM_BREAD};
 
     final DoorSystem doorSystem = new DoorSystem();
     final java.util.HashMap<Long, Integer> doorMeta = doorSystem.meta;
@@ -554,7 +556,7 @@ public class MinecraftGL {
                     chatInput.insert(chatCursor, (char) codepoint);
                     chatCursor++;
                     chatSelection = chatCursor;
-                    resetChatCompletion();
+                    refreshChatSuggestions();
                 }
             }
         });
@@ -570,13 +572,13 @@ public class MinecraftGL {
                     if (!deleteChatSelection() && chatCursor > 0) {
                         chatInput.deleteCharAt(--chatCursor);
                         chatSelection = chatCursor;
-                        resetChatCompletion();
+                        refreshChatSuggestions();
                     }
                 } else if (key == GLFW_KEY_DELETE) {
                     if (!deleteChatSelection() && chatCursor < chatInput.length()) {
                         chatInput.deleteCharAt(chatCursor);
                         chatSelection = chatCursor;
-                        resetChatCompletion();
+                        refreshChatSuggestions();
                     }
                 } else if (key == GLFW_KEY_LEFT) {
                     if (!shift && chatCursor != chatSelection) chatCursor = Math.min(chatCursor, chatSelection);
@@ -1402,21 +1404,49 @@ public class MinecraftGL {
         glfwGetCursorPos(window, mxA, myA);
         int mx = (int) mxA[0], my = (int) myA[0];
         if (mouse && !menuMouseWasDown) {
-            sound.playClick();
             if (menuScreen == 0) handleMainMenuClick(mx, my);
-            else handleWorldMenuClick(mx, my);
+            else if (menuScreen == 1) handleWorldMenuClick(mx, my);
+            else handleMainOptionsClick(mx, my);
         }
         menuMouseWasDown = mouse;
     }
 
     void handleMainMenuClick(int mx, int my) {
-        int bw = 320, bh = 46;
+        int bw = 400, bh = 40;
         int bx = width / 2 - bw / 2;
-        int by = height / 2 - 40;
-        if (inside(mx, my, bx, by, bw, bh)) { menuScreen = 1; refreshWorldList(); return; }
-        if (inside(mx, my, bx, by + 58, bw, bh)) { createNewWorld(); return; }
-        if (worldLoaded && inside(mx, my, bx, by + 116, bw, bh)) { saveWorld(currentWorldName); menuMessage = language.equals("en") ? "World saved" : "Swiat zapisany"; return; }
-        if (inside(mx, my, bx, by + (worldLoaded ? 174 : 116), bw, bh)) glfwSetWindowShouldClose(window, true);
+        int by = height / 4 + 96;
+        int bottomY = by + 168;
+        if (inside(mx, my, bx, by, bw, bh)) {
+            menuScreen = 1;
+            refreshWorldList();
+            sound.playClick();
+        } else if (inside(mx, my, bx, bottomY, 196, bh)) {
+            menuScreen = 2;
+            sound.playClick();
+        } else if (inside(mx, my, bx + 204, bottomY, 196, bh)) {
+            sound.playClick();
+            glfwSetWindowShouldClose(window, true);
+        } else if (inside(mx, my, bx - 48, bottomY, 40, bh)) {
+            language = "en".equals(language) ? "pl" : "en";
+            sound.playClick();
+        }
+    }
+
+    void handleMainOptionsClick(int mx, int my) {
+        int bw = 400, bh = 40;
+        int bx = width / 2 - bw / 2;
+        int by = height / 4 + 80;
+        if (inside(mx, my, bx, by, bw, bh)) {
+            double next = sound.masterVolume <= 0.01 ? 1.0 : Math.max(0.0, sound.masterVolume - 0.25);
+            sound.setVolume(next);
+            if (sound.enabled) sound.playClick();
+        } else if (inside(mx, my, bx, by + 48, bw, bh)) {
+            language = "en".equals(language) ? "pl" : "en";
+            sound.playClick();
+        } else if (inside(mx, my, bx, by + 144, bw, bh)) {
+            menuScreen = 0;
+            sound.playClick();
+        }
     }
 
     void handleWorldMenuClick(int mx, int my) {
@@ -1424,13 +1454,25 @@ public class MinecraftGL {
         int listY = 150;
         for (int i = 0; i < worldNames.length; i++) {
             int y0 = listY + i * 42;
-            if (inside(mx, my, listX, y0, 520, 36)) { selectedWorldIndex = i; loadWorld(worldNames[i]); return; }
+            if (inside(mx, my, listX, y0, 520, 36)) {
+                selectedWorldIndex = i;
+                sound.playClick();
+                loadWorld(worldNames[i]);
+                return;
+            }
         }
         int bw = 240, bh = 42;
         int bx = width / 2 - bw / 2;
         int by = height - 190;
-        if (inside(mx, my, bx, by, bw, bh)) { createNewWorld(); return; }
-        if (inside(mx, my, bx, by + 54, bw, bh)) { menuScreen = 0; return; }
+        if (inside(mx, my, bx, by, bw, bh)) {
+            sound.playClick();
+            createNewWorld();
+            return;
+        }
+        if (inside(mx, my, bx, by + 54, bw, bh)) {
+            menuScreen = 0;
+            sound.playClick();
+        }
     }
 
     void renderMenu() {
@@ -1444,18 +1486,14 @@ public class MinecraftGL {
         glLoadIdentity();
         glDisable(GL_TEXTURE_2D);
         drawPrettyMenuBackground();
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glColor4f(0.02f, 0.02f, 0.02f, 0.38f);
-        quad(width / 2 - 310, 42, 620, 92);
-        glColor4f(1f, 1f, 1f, 0.22f);
-        lineRect(width / 2 - 310, 42, 620, 92);
-        glDisable(GL_BLEND);
-        drawText("CRAFT3D OPENGL", width / 2 - 230, 64, 1.25f);
-        drawText("LWJGL / OpenGL voxel survival", width / 2 - 210, 112, 0.72f);
+        // GuiMainMenu layout without Mojang's logo, as requested.
         if (menuScreen == 0) drawMainMenu();
-        else drawWorldMenu();
-        if (menuMessage != null && !menuMessage.isEmpty()) drawText(menuMessage, 24, height - 32, 0.85f);
+        else if (menuScreen == 1) drawWorldMenu();
+        else drawMainOptions();
+        fontRenderer.drawVanillaText("Craft3D Release", 4, height - 20, 2, 1f);
+        if (menuMessage != null && !menuMessage.isEmpty()) {
+            fontRenderer.drawVanillaText(menuMessage, 4, height - 40, 2, 1f);
+        }
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_FOG);
     }
@@ -1465,14 +1503,32 @@ public class MinecraftGL {
     }
 
     void drawMainMenu() {
-        int bw = 320, bh = 46;
+        // GuiMainMenu: 200x20 controls at GUI scale 2, 24 GUI pixels apart.
+        int bw = 400, bh = 40;
         int bx = width / 2 - bw / 2;
-        int by = height / 2 - 40;
+        int by = height / 4 + 96;
+        int bottomY = by + 168;
         drawButton(bx, by, bw, bh, tr("menu.singleplayer"));
-        drawButton(bx, by + 58, bw, bh, tr("menu.newworld"));
-        int quitY = by + 116;
-        if (worldLoaded) { drawButton(bx, quitY, bw, bh, tr("menu.savecur")); quitY += 58; }
-        drawButton(bx, quitY, bw, bh, tr("menu.quit"));
+        MenuButton.drawButtonState(fontRenderer, bx, by + 48, bw, bh,
+                tr("menu.multiplayer"), 3);
+        MenuButton.drawButtonState(fontRenderer, bx, by + 96, bw, bh,
+                tr("menu.online"), 3);
+        drawButton(bx, bottomY, 196, bh, tr("menu.options"));
+        drawButton(bx + 204, bottomY, 196, bh, tr("menu.quit"));
+        drawButton(bx - 48, bottomY, 40, bh, "en".equals(language) ? "EN" : "PL");
+    }
+
+    void drawMainOptions() {
+        int bw = 400, bh = 40;
+        int bx = width / 2 - bw / 2;
+        int by = height / 4 + 80;
+        fontRenderer.drawVanillaText(tr("settings.title"),
+                width / 2 - FontRenderer.mcTextWidth(tr("settings.title"), 2) / 2, 30, 2, 1f);
+        drawButton(bx, by, bw, bh,
+                tr("settings.master") + ": " + sound.volumePercent() + "%");
+        drawButton(bx, by + 48, bw, bh,
+                tr("settings.language") + ": " + ("en".equals(language) ? "English" : "Polski"));
+        drawButton(bx, by + 144, bw, bh, tr("settings.done"));
     }
 
     void drawWorldMenu() {
@@ -1869,13 +1925,16 @@ public class MinecraftGL {
             pauseMouseWasDown = left;
             return;
         }
-        int bw = 320, bh = 46;
-        int bx = width / 2 - bw / 2;
-        int by = height / 2 - 76;
+        int fullW = 400, halfW = 196, bh = 40;
+        int bx = width / 2 - fullW / 2;
+        int top = height / 4 + 16;
         if (left && !pauseMouseWasDown) {
-            if (inside(mx, my, bx, by, bw, bh)) resumeGame();
-            else if (inside(mx, my, bx, by + 58, bw, bh)) { pauseScreen = 1; settingsTab = 0; sound.playClick(); }
-            else if (inside(mx, my, bx, by + 116, bw, bh)) {
+            if (inside(mx, my, bx, top, fullW, bh)) resumeGame();
+            else if (inside(mx, my, bx, top + 144, halfW, bh)) {
+                pauseScreen = 1;
+                settingsTab = 0;
+                sound.playClick();
+            } else if (inside(mx, my, bx, top + 192, fullW, bh)) {
                 saveWorld(currentWorldName);
                 paused = false;
                 inMainMenu = true;
@@ -3616,6 +3675,7 @@ public class MinecraftGL {
     void openVillagerTrade(VillagerGL v) {
         tradingVillager = v;
         villagerTradeOpen = true;
+        selectedVillagerTrade = 0;
         inventoryOpen = false;
         creativeInvOpen = false;
         chestOpen = false;
@@ -3627,7 +3687,6 @@ public class MinecraftGL {
         escWasDown = true;
         villagerMouseWasDown = true;
         rightWasDown = true;
-        sound.playClick();
     }
 
     void closeVillagerTrade() {
@@ -3641,7 +3700,6 @@ public class MinecraftGL {
         escWasDown = true;
         leftWasDown = true;
         rightWasDown = true;
-        sound.playClick();
     }
 
     void handleVillagerTradeInput(boolean left) {
@@ -3652,9 +3710,17 @@ public class MinecraftGL {
         glfwGetCursorPos(window, mxA, myA);
         int mx = (int)mxA[0], my = (int)myA[0];
         if (left && !villagerMouseWasDown) {
-            int trade = craft3dgl.ui.TradeUIRenderer.hitTest(mx, my, width, height);
-            if (trade >= 0 && trade <= 2) doVillagerTrade(trade);
-            else if (trade == 3) closeVillagerTrade();
+            int action = craft3dgl.ui.TradeUIRenderer.hitTest(
+                    mx, my, width, height, selectedVillagerTrade);
+            if (action == craft3dgl.ui.TradeUIRenderer.PREVIOUS) {
+                selectedVillagerTrade--;
+                sound.playClick();
+            } else if (action == craft3dgl.ui.TradeUIRenderer.NEXT) {
+                selectedVillagerTrade++;
+                sound.playClick();
+            } else if (action == craft3dgl.ui.TradeUIRenderer.TRADE) {
+                doVillagerTrade(selectedVillagerTrade);
+            }
         }
         villagerMouseWasDown = left;
     }
@@ -3727,7 +3793,12 @@ public class MinecraftGL {
     }
 
 
-    void drawVillagerTradeUI() { craft3dgl.ui.TradeUIRenderer.draw(fontRenderer, width, height, language); }
+    void drawVillagerTradeUI() {
+        double[] mx = new double[1], my = new double[1];
+        glfwGetCursorPos(window, mx, my);
+        craft3dgl.ui.TradeUIRenderer.draw(width, height, fontRenderer, this::drawStackIcon,
+                invId, invCount, selectedVillagerTrade, (int)mx[0], (int)my[0], language);
+    }
 
     // ====== ANIMALS ======
 
@@ -5240,6 +5311,7 @@ public class MinecraftGL {
         if (id == AIR) return false;
         // Wszystkie NIE-solid layers (CUTOUT + TRANSLUCENT + brak collision) -> NIE occlude
         if (id == LEAVES) return false;                        // CUTOUT_MIPPED
+        if (id == GLASS) return false;                         // CUTOUT, BlockBreakable
         if (id == TALL_GRASS) return false;                    // CUTOUT (cross)
         if (id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3) return false;  // CUTOUT
         if (id == WATER) return false;                         // TRANSLUCENT
@@ -5260,6 +5332,7 @@ public class MinecraftGL {
         int other = world[nx][ny][nz] & 0xff;
         // MC: skipRendering - LEAVES obok LEAVES nie rysujemy internal faces
         if (id == LEAVES && other == LEAVES) return false;
+        if (id == GLASS && other == GLASS) return false;
         // MC: WATER obok WATER - internal culling (nie rysujemy powierzchni miedzy blokami wody)
         if (id == WATER && other == WATER) return false;
         // GLOWNA REGULA MC: sasiad musi occlude zeby zakryc nasza sciane
@@ -5274,8 +5347,8 @@ public class MinecraftGL {
     /**
      * Dodaje wszystkie widoczne sciany blokow chunka (cx,cy,cz) do BufferBuildera dla danego layera.
      *   SOLID       = kamien, ziemia, drewno, planks itd (opaque)
-     *   CUTOUT      = liscie, tall_grass, wheat (alpha discard w shaderze)
-     *   TRANSLUCENT = woda, szklo (alpha blend, sorting)
+     *   CUTOUT      = liscie, tall_grass, wheat, szklo (alpha discard)
+     *   TRANSLUCENT = woda (alpha blend, sorting)
      * Zwraca liczbe dodanych quadow.
      */
     static int dbgDir0=0, dbgDir1=0, dbgDir2=0, dbgDir3=0, dbgDir4=0, dbgDir5=0;
@@ -5293,12 +5366,13 @@ public class MinecraftGL {
                     if (id == DOOR_BOTTOM || id == DOOR_TOP || id == CHEST) continue;
                     boolean isCross = (id == TALL_GRASS || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3);
                     boolean isLeaves = (id == LEAVES);
+                    boolean isGlass = (id == GLASS);
                     boolean isWater = (id == WATER);
                     // Klasyfikacja per layer
                     if (layer == MODERN_LAYER_SOLID) {
-                        if (isCross || isLeaves || isWater) continue;
+                        if (isCross || isLeaves || isGlass || isWater) continue;
                     } else if (layer == MODERN_LAYER_CUTOUT) {
-                        if (!isCross && !isLeaves) continue;
+                        if (!isCross && !isLeaves && !isGlass) continue;
                     } else if (layer == MODERN_LAYER_TRANSLUCENT) {
                         if (!isWater) continue;
                     }
@@ -5544,41 +5618,11 @@ public class MinecraftGL {
             glColor4f(pp.r, pp.g, pp.b, alpha * 0.9f);
             craft3dgl.ui.UIStyle.lineRect(sx - tw / 2 - 4, sy - 2, tw + 8, th + 4);
             glEnable(GL_TEXTURE_2D);
-            // Tekst - hack: renderujemy przez glColor4f + drawText (drawText wewnetrznie ustawi kolor 1,1,1)
-            // Wiec uzyjemy fontRenderer.drawText direct ale z shadowem
-            fontRenderer.drawText(txt, sx - tw / 2, sy, scale);
-            // Overlay kolorem - drugi passing z kolorem popup
-            glBindTexture(GL_TEXTURE_2D, fontTexture);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glColor4f(pp.r, pp.g, pp.b, alpha);
-            drawTextColoredRaw(txt, sx - tw / 2, sy, scale);
+            int rgb = ((int)(pp.r * 255f) << 16) | ((int)(pp.g * 255f) << 8) | (int)(pp.b * 255f);
+            fontRenderer.drawTextColored(txt, sx - tw / 2, sy, scale, rgb, alpha, true);
             glBindTexture(GL_TEXTURE_2D, textureAtlas);
         }
         glColor4f(1, 1, 1, 1);
-    }
-
-    /** Rysuje tekst tylko kwady - bez ustawiania koloru (kolor musi byc juz wczesniej ustawiony). */
-    void drawTextColoredRaw(String text, int x, int y, float scale) {
-        float size = craft3dgl.ui.FontRenderer.FONT_CELL * scale;
-        glBegin(GL_QUADS);
-        for (int i = 0; i < text.length(); i++) {
-            int c = text.charAt(i);
-            if (c < 32 || c > 126) c = '?';
-            int tx = c & 15;
-            int ty = c >> 4;
-            float u0 = tx / 16f;
-            float v0 = ty / 16f;
-            float u1 = (tx + 1) / 16f;
-            float v1 = (ty + 1) / 16f;
-            float px = x + i * size * 0.66f;
-            float py = y;
-            glTexCoord2f(u0, v0); glVertex2f(px, py);
-            glTexCoord2f(u1, v0); glVertex2f(px + size, py);
-            glTexCoord2f(u1, v1); glVertex2f(px + size, py + size);
-            glTexCoord2f(u0, v1); glVertex2f(px, py + size);
-        }
-        glEnd();
     }
 
     void drawCrosshair() {
@@ -5620,7 +5664,10 @@ public class MinecraftGL {
         glDisable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glColor4f(0.00f, 0.00f, 0.00f, 0.48f); quad(0, 0, width, height);
+        glBegin(GL_QUADS);
+        glColor4f(0.063f, 0.063f, 0.063f, 0.75f); glVertex2i(0, 0); glVertex2i(width, 0);
+        glColor4f(0.063f, 0.063f, 0.063f, 0.82f); glVertex2i(width, height); glVertex2i(0, height);
+        glEnd();
         if (pauseScreen == 1) drawSettingsOverlay();
         else drawPauseButtons();
         glDisable(GL_BLEND);
@@ -5628,19 +5675,22 @@ public class MinecraftGL {
     }
 
     void drawPauseButtons() {
-        int panelW = 430, panelH = 265;
-        int px = width / 2 - panelW / 2;
-        int py = height / 2 - 145;
-        glColor4f(0.03f, 0.03f, 0.04f, 0.70f); quad(px, py, panelW, panelH);
-        glColor4f(0.80f, 0.80f, 0.86f, 0.42f); lineRect(px, py, panelW, panelH);
-        drawCenteredText(tr("pause.title"), px + panelW / 2, py + 18, 0.90f);
-        int bw = 320, bh = 46;
-        int bx = width / 2 - bw / 2;
-        int by = height / 2 - 76;
-        drawButton(bx, by, bw, bh, tr("pause.continue"));
-        drawButton(bx, by + 58, bw, bh, tr("pause.settings"));
-        drawButton(bx, by + 116, bw, bh, tr("pause.exit"));
-        drawText(tr("pause.esc"), bx + 40, by + 176, 0.58f);
+        // GuiIngameMenu.initGui from MCP 9.40 at GUI scale 2.
+        int fullW = 400, halfW = 196, bh = 40;
+        int bx = width / 2 - fullW / 2;
+        int top = height / 4 + 16;
+        String title = tr("pause.title");
+        fontRenderer.drawVanillaText(title,
+                width / 2 - FontRenderer.mcTextWidth(title, 2) / 2, 80, 2, 1f);
+        drawButton(bx, top, fullW, bh, tr("pause.continue"));
+        MenuButton.drawButtonState(fontRenderer, bx, top + 48, halfW, bh,
+                tr("pause.advancements"), 3);
+        MenuButton.drawButtonState(fontRenderer, bx + 204, top + 48, halfW, bh,
+                tr("pause.statistics"), 3);
+        drawButton(bx, top + 144, halfW, bh, tr("pause.settings"));
+        MenuButton.drawButtonState(fontRenderer, bx + 204, top + 144, halfW, bh,
+                tr("pause.openlan"), 3);
+        drawButton(bx, top + 192, fullW, bh, tr("pause.exit"));
     }
 
     void drawSettingsOverlay() {
@@ -6813,6 +6863,8 @@ public class MinecraftGL {
         if (other == WATER) return true;
         if (other == DOOR_BOTTOM || other == DOOR_TOP || other == CHEST) return true;
         if (id == LEAVES && other == LEAVES) return false;
+        if (id == GLASS && other == GLASS) return false;
+        if (other == GLASS) return true;
         // tall_grass i wheat sa "cross" - inne bloki widoczne za nimi
         if (other == TALL_GRASS || other == WHEAT_0 || other == WHEAT_1 || other == WHEAT_2 || other == WHEAT_3) return true;
         return false;
@@ -7179,7 +7231,7 @@ public class MinecraftGL {
         if (!inWorld(bx, by, bz)) return false;
         int id = world[bx][by][bz] & 0xff;
         return id == GRASS || id == DIRT || id == STONE || id == WOOD
-                || id == LEAVES || id == SAND || id == PLANKS
+                || id == LEAVES || id == SAND || id == PLANKS || id == GLASS
                 || id == CRAFTING_TABLE;
     }
 
@@ -7489,7 +7541,7 @@ public class MinecraftGL {
         chatScroll = 0;
         sentHistoryCursor = sentChatHistory.size();
         chatHistoryDraft = "";
-        resetChatCompletion();
+        refreshChatSuggestions();
         mouseCaptured = false;
         firstMouse = true;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -7537,7 +7589,7 @@ public class MinecraftGL {
         chatInput.append(value);
         chatCursor = chatInput.length();
         chatSelection = chatCursor;
-        resetChatCompletion();
+        refreshChatSuggestions();
     }
 
     String selectedChatText() {
@@ -7554,7 +7606,7 @@ public class MinecraftGL {
         chatInput.delete(from, to);
         chatCursor = from;
         chatSelection = from;
-        resetChatCompletion();
+        refreshChatSuggestions();
         return true;
     }
 
@@ -7567,7 +7619,15 @@ public class MinecraftGL {
         chatInput.insert(chatCursor, clean);
         chatCursor += clean.length();
         chatSelection = chatCursor;
-        resetChatCompletion();
+        refreshChatSuggestions();
+    }
+
+    void refreshChatSuggestions() {
+        String text = chatInput.toString();
+        chatCompletions = text.startsWith("/")
+                ? craft3dgl.commands.ChatCommands.complete(text)
+                : java.util.Collections.emptyList();
+        chatCompletionIndex = -1;
     }
 
     void resetChatCompletion() {
@@ -7576,28 +7636,28 @@ public class MinecraftGL {
     }
 
     void completeChatInput() {
-        if (chatCompletions.isEmpty()) {
-            String original = chatInput.toString();
-            chatCompletions = craft3dgl.commands.ChatCommands.complete(original);
-            chatCompletionIndex = -1;
-            if (chatCompletions.size() > 1) {
-                String common = chatCompletions.get(0);
-                for (int i = 1; i < chatCompletions.size(); i++) {
-                    String candidate = chatCompletions.get(i);
-                    int n = 0, max = Math.min(common.length(), candidate.length());
-                    while (n < max && common.charAt(n) == candidate.charAt(n)) n++;
-                    common = common.substring(0, n);
-                }
-                if (common.length() > original.length()) {
-                    chatInput.setLength(0);
-                    chatInput.append(common);
-                    chatCursor = chatInput.length();
-                    chatSelection = chatCursor;
-                    return;
-                }
+        if (chatCompletions.isEmpty()) refreshChatSuggestions();
+        if (chatCompletions.isEmpty()) return;
+
+        String original = chatInput.toString();
+        if (chatCompletionIndex < 0 && chatCompletions.size() > 1) {
+            String common = chatCompletions.get(0);
+            for (int i = 1; i < chatCompletions.size(); i++) {
+                String candidate = chatCompletions.get(i);
+                int n = 0, max = Math.min(common.length(), candidate.length());
+                while (n < max && common.charAt(n) == candidate.charAt(n)) n++;
+                common = common.substring(0, n);
+            }
+            if (common.length() > original.length()) {
+                chatInput.setLength(0);
+                chatInput.append(common);
+                chatCursor = chatInput.length();
+                chatSelection = chatCursor;
+                refreshChatSuggestions();
+                return;
             }
         }
-        if (chatCompletions.isEmpty()) return;
+
         chatCompletionIndex = (chatCompletionIndex + 1) % chatCompletions.size();
         String value = chatCompletions.get(chatCompletionIndex);
         chatInput.setLength(0);
@@ -7692,7 +7752,7 @@ public class MinecraftGL {
 
     int[] creativeItemsForTab() {
         int[] all = CREATIVE_ITEMS;
-        int[] blocks = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, CRAFTING_TABLE, DOOR_BOTTOM, CHEST, WATER, FARMLAND, TALL_GRASS};
+        int[] blocks = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, GLASS, CRAFTING_TABLE, DOOR_BOTTOM, CHEST, WATER, FARMLAND, TALL_GRASS};
         int[] tools = {ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE};
         int[] food = {ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_BREAD, ITEM_WHEAT};
         int[] base = creativeTab == 1 ? blocks : creativeTab == 2 ? tools : creativeTab == 3 ? food : all;
@@ -7912,18 +7972,27 @@ public class MinecraftGL {
                 fontRenderer.drawVanillaText("_", cursorX, inputY + 2, fontScale, 1f);
             }
 
-            if (chatCompletions.size() > 1) {
-                StringBuilder options = new StringBuilder();
-                for (int i = 0; i < chatCompletions.size() && i < 8; i++) {
-                    if (i > 0) options.append("  ");
-                    options.append(chatCompletions.get(i));
+            if (!chatCompletions.isEmpty()) {
+                int visibleSuggestions = Math.min(chatCompletions.size(),
+                        Math.min(10, Math.max(1, (inputY - 4) / lineHeight)));
+                int firstSuggestion = 0;
+                if (chatCompletionIndex >= visibleSuggestions) {
+                    firstSuggestion = chatCompletionIndex - visibleSuggestions + 1;
                 }
-                int suggestionY = inputY - lineHeight;
-                glDisable(GL_TEXTURE_2D);
-                glColor4f(0f, 0f, 0f, 0.5f);
-                quad(2, suggestionY, chatWidth, lineHeight);
-                fontRenderer.drawVanillaText(options.toString(), 4, suggestionY + fontScale,
-                        fontScale, 1f);
+                for (int row = 0; row < visibleSuggestions; row++) {
+                    int index = firstSuggestion + row;
+                    if (index >= chatCompletions.size()) break;
+                    int suggestionY = inputY - (visibleSuggestions - row) * lineHeight;
+                    glDisable(GL_TEXTURE_2D);
+                    glColor4f(index == chatCompletionIndex ? 0.25f : 0f,
+                            index == chatCompletionIndex ? 0.25f : 0f,
+                            index == chatCompletionIndex ? 0.25f : 0f, 0.75f);
+                    int rowWidth = Math.min(chatWidth, FontRenderer.mcTextWidth(
+                            chatCompletions.get(index), fontScale) + 8);
+                    quad(2, suggestionY, rowWidth, lineHeight);
+                    fontRenderer.drawVanillaText(chatCompletions.get(index), 4,
+                            suggestionY + fontScale, fontScale, 1f);
+                }
             }
         }
         glColor4f(1f, 1f, 1f, 1f);

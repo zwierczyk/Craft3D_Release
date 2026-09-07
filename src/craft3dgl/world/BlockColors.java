@@ -24,6 +24,7 @@ public final class BlockColors {
             case DOOR_BOTTOM:
             case DOOR_TOP: return new float[]{0.65f, 0.42f, 0.20f};
             case CHEST: return new float[]{0.61f, 0.43f, 0.21f};
+            case GLASS: return new float[]{0.81f, 0.91f, 0.93f};
             case FARMLAND: return new float[]{0.35f, 0.22f, 0.14f};
             case TALL_GRASS: return new float[]{0.31f, 0.67f, 0.22f};
             case WHEAT_0: return new float[]{0.31f, 0.67f, 0.22f};

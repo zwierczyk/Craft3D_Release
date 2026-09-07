@@ -22,6 +22,7 @@ public final class ItemNames {
             case CRAFTING_TABLE: return en ? "Crafting Table" : "Stol craftingowy";
             case DOOR_BOTTOM: case DOOR_TOP: return en ? "Oak Door" : "Debowe drzwi";
             case CHEST: return en ? "Chest" : "Skrzynka";
+            case GLASS: return en ? "Glass" : "Szkło";
             case WATER: return en ? "Water" : "Woda";
             case ITEM_STICK: return en ? "Sticks" : "Patyki";
             case ITEM_WOOD_PICKAXE: return en ? "Wood Pickaxe" : "Drewniany kilof";
@@ -63,6 +64,7 @@ public final class ItemNames {
             case "crafting_table": case "table": return CRAFTING_TABLE;
             case "door": case "oak_door": case "wooden_door": case "drzwi": return DOOR_BOTTOM;
             case "chest": return CHEST;
+            case "glass": case "szklo": case "szkło": return GLASS;
             case "water": return WATER;
             case "stick": return ITEM_STICK;
             case "wood_pickaxe": case "wpick": return ITEM_WOOD_PICKAXE;

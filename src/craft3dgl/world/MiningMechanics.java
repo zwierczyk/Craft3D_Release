@@ -12,6 +12,7 @@ public final class MiningMechanics {
 
     /** Twardość bloku - im więcej, tym dłużej trzeba kopać. */
     public static double hardness(int block) {
+        if (block == GLASS) return 0.30; // BlockGlass hardness in Minecraft 1.12
         if (block == LEAVES) return 0.25;
         if (block == TALL_GRASS) return 0.05;
         if (block == WHEAT_0 || block == WHEAT_1 || block == WHEAT_2 || block == WHEAT_3) return 0.10;

@@ -1,107 +1,128 @@
 package craft3dgl.ui;
 
-import static org.lwjgl.glfw.GLFW.glfwGetTime;
+import craft3dgl.save.AssetFinder;
+import org.lwjgl.BufferUtils;
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.nio.ByteBuffer;
+
 import static org.lwjgl.opengl.GL11.*;
 
-/**
- * Tło głównego menu: niebo, słońce, chmury, góry parallax, ziemia + drzewka.
- */
+/** Minecraft 1.12 title-screen cubemap panorama (the logo is intentionally omitted). */
 public final class MenuBackgroundRenderer {
+    private static final int[] PANORAMA = {-1, -1, -1, -1, -1, -1};
+    private static long animationStart;
 
     private MenuBackgroundRenderer() {}
 
-    private static int hash(int a, int b) {
-        int h = a * 73428767 ^ b * 9122719;
-        h ^= h >>> 13;
-        h *= 1274126177;
-        return h;
-    }
-
     public static void draw(int width, int height) {
+        ensureLoaded();
+        if (PANORAMA[0] > 0) drawPanorama(width, height);
+        else {
+            glDisable(GL_TEXTURE_2D);
+            glColor3f(0.15f, 0.19f, 0.24f);
+            UIStyle.quad(0, 0, width, height);
+        }
+
+        // GuiMainMenu applies a dark gradient over its blurred panorama before controls.
         glDisable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        double time = glfwGetTime();
-        // Niebo gradient
         glBegin(GL_QUADS);
-        glColor3f(0.20f, 0.43f, 0.78f); glVertex2i(0, 0); glVertex2i(width, 0);
-        glColor3f(0.62f, 0.82f, 1.00f); glVertex2i(width, height); glVertex2i(0, height);
+        glColor4f(0f, 0f, 0f, 0.20f); glVertex2i(0, 0); glVertex2i(width, 0);
+        glColor4f(0f, 0f, 0f, 0.48f); glVertex2i(width, height); glVertex2i(0, height);
         glEnd();
-        // Słońce
-        int sunX = width - 210;
-        int sunY = 82;
-        glColor4f(1.0f, 0.85f, 0.20f, 0.18f); UIStyle.quad(sunX - 34, sunY - 34, 128, 128);
-        glColor4f(1.0f, 0.92f, 0.25f, 1.0f); UIStyle.quad(sunX, sunY, 64, 64);
-        glColor4f(1.0f, 1.0f, 0.60f, 0.55f); UIStyle.quad(sunX + 8, sunY + 8, 20, 20);
-        // Chmury parallax
-        for (int i = 0; i < 7; i++) {
-            int base = i * 230;
-            int cx = (int)((base - time * (18 + i * 2)) % (width + 260));
-            if (cx < -240) cx += width + 260;
-            int cy = 70 + (i % 3) * 42;
-            drawBlockCloud(cx, cy, 1.0f - i * 0.035f);
-        }
-        // Góry 2 warstwy
-        drawMountainLayer(width, height, (int)(height * 0.54), 0.16f, 0.31f, 0.38f, 105, 0.82f);
-        drawMountainLayer(width, height, (int)(height * 0.61), 0.12f, 0.24f, 0.22f, 78, 0.92f);
-        // Ziemia
-        int groundY = (int)(height * 0.74);
-        for (int x = 0; x < width; x += 32) {
-            int bump = ((x / 32) * 17) % 22;
-            int gy = groundY + bump - 10;
-            glColor4f(0.21f, 0.55f, 0.18f, 1f); UIStyle.quad(x, gy, 32, 10);
-            glColor4f(0.37f, 0.23f, 0.12f, 1f); UIStyle.quad(x, gy + 10, 32, height - gy - 10);
-            glColor4f(0.22f, 0.14f, 0.08f, 0.75f); UIStyle.quad(x, gy + 26, 32, 4);
-        }
-        // Drzewka
-        drawMenuTree(80, groundY - 95, 1.25f);
-        drawMenuTree(width - 145, groundY - 105, 1.35f);
-        drawMenuTree(width - 300, groundY - 82, 1.0f);
-        // Vignette
-        glColor4f(0, 0, 0, 0.32f); UIStyle.quad(0, 0, width, 42);
-        glColor4f(0, 0, 0, 0.34f); UIStyle.quad(0, height - 70, width, 70);
-        glColor4f(0, 0, 0, 0.22f); UIStyle.quad(0, 0, 80, height);
-        glColor4f(0, 0, 0, 0.22f); UIStyle.quad(width - 80, 0, 80, height);
         glDisable(GL_BLEND);
-        glColor4f(1,1,1,1);
+        glColor4f(1f, 1f, 1f, 1f);
     }
 
-    private static void drawBlockCloud(int x, int y, float shade) {
-        glColor4f(shade, shade, shade, 0.78f);
-        UIStyle.quad(x + 0, y + 18, 72, 24);
-        UIStyle.quad(x + 42, y + 4, 78, 38);
-        UIStyle.quad(x + 92, y + 18, 90, 24);
-        UIStyle.quad(x + 130, y + 10, 52, 30);
-        glColor4f(1f, 1f, 1f, 0.36f);
-        UIStyle.quad(x + 48, y + 8, 30, 8);
-        UIStyle.quad(x + 98, y + 20, 38, 7);
-    }
+    private static void drawPanorama(int width, int height) {
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(false);
+        glDisable(GL_CULL_FACE);
+        glEnable(GL_TEXTURE_2D);
 
-    private static void drawMountainLayer(int width, int height, int baseY,
-                                          float r, float g, float b, int step, float alpha) {
-        glColor4f(r, g, b, alpha);
-        glBegin(GL_TRIANGLES);
-        for (int x = -step; x < width + step; x += step) {
-            int h = 70 + Math.abs(hash(x / step, baseY) % 95);
-            glVertex2i(x, baseY);
-            glVertex2i(x + step / 2, baseY - h);
-            glVertex2i(x + step, baseY);
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        double near = 0.05;
+        double top = near * Math.tan(Math.toRadians(60.0)); // 120 degree GuiMainMenu panorama FOV
+        double right = top * width / (double)Math.max(1, height);
+        glFrustum(-right, right, -top, top, near, 10.0);
+
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+        glRotated(180.0, 1.0, 0.0, 0.0);
+        glRotated(90.0, 0.0, 0.0, 1.0);
+        double elapsed = (System.currentTimeMillis() - animationStart) / 1000.0;
+        glRotated(20.0 + Math.sin(elapsed * 0.15) * 5.0, 1.0, 0.0, 0.0);
+        glRotated(-elapsed * 6.0, 0.0, 1.0, 0.0);
+
+        for (int side = 0; side < 6; side++) {
+            if (PANORAMA[side] <= 0) continue;
+            glPushMatrix();
+            if (side == 1) glRotated(90.0, 0.0, 1.0, 0.0);
+            if (side == 2) glRotated(180.0, 0.0, 1.0, 0.0);
+            if (side == 3) glRotated(-90.0, 0.0, 1.0, 0.0);
+            if (side == 4) glRotated(90.0, 1.0, 0.0, 0.0);
+            if (side == 5) glRotated(-90.0, 1.0, 0.0, 0.0);
+            glBindTexture(GL_TEXTURE_2D, PANORAMA[side]);
+            glColor4f(1f, 1f, 1f, 1f);
+            glBegin(GL_QUADS);
+            glTexCoord2f(0f, 0f); glVertex3f(-1f, -1f, 1f);
+            glTexCoord2f(1f, 0f); glVertex3f( 1f, -1f, 1f);
+            glTexCoord2f(1f, 1f); glVertex3f( 1f,  1f, 1f);
+            glTexCoord2f(0f, 1f); glVertex3f(-1f,  1f, 1f);
+            glEnd();
+            glPopMatrix();
         }
-        glEnd();
-        glColor4f(r * 0.75f, g * 0.75f, b * 0.75f, alpha);
-        UIStyle.quad(0, baseY - 3, width, height - baseY + 3);
+
+        glPopMatrix();
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+        glDepthMask(true);
     }
 
-    private static void drawMenuTree(int x, int y, float scale) {
-        int s = (int)(16 * scale);
-        glColor4f(0.36f, 0.20f, 0.09f, 1f);
-        UIStyle.quad(x + s, y + s * 3, s, s * 4);
-        glColor4f(0.08f, 0.36f, 0.12f, 1f);
-        UIStyle.quad(x, y + s, s * 3, s * 3);
-        UIStyle.quad(x + s, y, s * 3, s * 3);
-        UIStyle.quad(x + s * 2, y + s, s * 3, s * 3);
-        glColor4f(0.15f, 0.52f, 0.16f, 0.80f);
-        UIStyle.quad(x + s, y + s, s, s);
-        UIStyle.quad(x + s * 3, y + s * 2, s, s);
+    private static void ensureLoaded() {
+        if (PANORAMA[0] != -1) return;
+        animationStart = System.currentTimeMillis();
+        for (int i = 0; i < PANORAMA.length; i++) PANORAMA[i] = 0;
+        try {
+            File gui = AssetFinder.findAssetDir("gui", MenuBackgroundRenderer.class);
+            if (gui == null) return;
+            File directory = new File(new File(gui, "title"), "background");
+            for (int i = 0; i < PANORAMA.length; i++) {
+                BufferedImage image = ImageIO.read(new File(directory, "panorama_" + i + ".png"));
+                if (image != null) PANORAMA[i] = upload(image);
+            }
+        } catch (Throwable t) {
+            System.err.println("[MainMenu] panorama load failed: " + t.getMessage());
+        }
+    }
+
+    private static int upload(BufferedImage image) {
+        int width = image.getWidth(), height = image.getHeight();
+        ByteBuffer pixels = BufferUtils.createByteBuffer(width * height * 4);
+        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+            int argb = image.getRGB(x, y);
+            pixels.put((byte)((argb >>> 16) & 255));
+            pixels.put((byte)((argb >>> 8) & 255));
+            pixels.put((byte)(argb & 255));
+            pixels.put((byte)((argb >>> 24) & 255));
+        }
+        pixels.flip();
+        int texture = glGenTextures();
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+                GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        return texture;
     }
 }
