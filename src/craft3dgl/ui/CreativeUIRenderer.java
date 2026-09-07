@@ -34,7 +34,7 @@ public final class CreativeUIRenderer {
     public static final int PANEL_W = TEX_W * SCALE;       // 528
     public static final int PANEL_H = TEX_H * SCALE;       // 408
     public static final int SLOT_PITCH = TEX_SLOT * SCALE; // 54
-    public static final int SLOT_SIZE = 12 * SCALE;        // 36 (mniejszy icon)
+    public static final int SLOT_SIZE = 16 * SCALE;        // 48 (jak vanilla)
     public static final int TAB_W = 28 * SCALE;            // 84
     public static final int TAB_H = 32 * SCALE;            // 96
     public static final int SEARCH_W = 80 * SCALE;
@@ -127,9 +127,14 @@ public final class CreativeUIRenderer {
             craft3dgl.MinecraftGL.ITEM_STONE_AXE,   // Narzedzia
             craft3dgl.MinecraftGL.ITEM_BREAD        // Jedzenie
         };
+        String[] tabNames = {
+            trans.tr("creative.all"), trans.tr("creative.blocks"),
+            trans.tr("creative.tools"), trans.tr("creative.food")
+        };
         int tabHeight = 28 * SCALE;
         int tabY2 = py - tabHeight + 4;
         int tabWSmall = 26 * SCALE;   // waskie taby (nie 84)
+        int hoverTab = -1;
         for (int i = 0; i < 4; i++) {
             int tx = px + i * (tabWSmall + 4);   // troche odstepu miedzy
             boolean selected = (i == creativeTab);
@@ -152,6 +157,9 @@ public final class CreativeUIRenderer {
             int iconOff = (tabWSmall - iconSize) / 2;
             int iconY = tabY2 + (tabHeight - iconSize) / 2 - 2;
             iconDrawer.drawStackIcon(tabIcons[i], 1, tx + iconOff, iconY, iconSize);
+            if (mx >= tx && mx < tx + tabWSmall && my >= tabY2 && my < tabY2 + tabHeight) {
+                hoverTab = i;
+            }
         }
 
         // ==== PANEL BACKGROUND (creative_items.png, fragment 176x136) ====
@@ -180,6 +188,7 @@ public final class CreativeUIRenderer {
         // ==== GRID SLOTOW 9x5 = 45 (icons wrisujemy na wierzchu PNG slotow) ====
         int gX = gridX(screenW);
         int gY = gridY(screenH);
+        int tipId = 0;
         for (int i = 0; i < 45; i++) {
             int col = i % 9, row = i / 9;
             int sx = gX + col * SLOT_PITCH, sy = gY + row * SLOT_PITCH;
@@ -195,11 +204,13 @@ public final class CreativeUIRenderer {
                 glColor4f(1f, 1f, 1f, 0.35f);
                 UIStyle.quad(sx, sy, SLOT_PITCH, SLOT_PITCH);
                 glEnable(GL_TEXTURE_2D);
+                if (i < items.length && items[i] > 0) tipId = items[i];
             }
         }
 
         // ==== HOTBAR (9 slotow na dole) ====
         int hY = hotY(screenH);
+        int hotTip = 0;
         for (int col = 0; col < 9; col++) {
             int sx = invX(screenW) + col * SLOT_PITCH;
             if (col == selectedSlot) {
@@ -219,6 +230,7 @@ public final class CreativeUIRenderer {
                 glColor4f(1f, 1f, 1f, 0.35f);
                 UIStyle.quad(sx, hY, SLOT_PITCH, SLOT_PITCH);
                 glEnable(GL_TEXTURE_2D);
+                if (invIds[col] > 0) hotTip = invIds[col];
             }
         }
 
@@ -241,6 +253,13 @@ public final class CreativeUIRenderer {
         UIStyle.quad(tX + 28, tY2 + 18, 3, 18);
         glEnable(GL_TEXTURE_2D);
         if (trashHover) Tooltip.draw(font, trans.tr("creative.trash.short"), mx, my, screenW, screenH);
+
+        // ==== TOOLTIPY: kategoria taba albo nazwa przedmiotu pod kursorem ====
+        String tipText = null;
+        if (hoverTab >= 0) tipText = tabNames[hoverTab];
+        else if (tipId > 0) tipText = craft3dgl.items.ItemNames.itemName(tipId, trans.getLanguage());
+        else if (hotTip > 0) tipText = craft3dgl.items.ItemNames.itemName(hotTip, trans.getLanguage());
+        if (tipText != null) Tooltip.draw(font, tipText, mx, my, screenW, screenH);
 
         // ==== CURSOR ITEM (item na kursorze przy przenoszeniu) ====
         if (cursorId > 0 && cursorCount > 0) {

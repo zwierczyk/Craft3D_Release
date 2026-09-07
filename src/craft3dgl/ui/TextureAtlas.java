@@ -43,15 +43,14 @@ public final class TextureAtlas {
 
     public static int createTextureAtlas() {
         BufferedImage img = new BufferedImage(ATLAS_COLS * ATLAS_TILE, ATLAS_ROWS * ATLAS_TILE, BufferedImage.TYPE_INT_ARGB);
-        // Vanilla 1.12 textures. Plains biome tint comes from grass.png and
-        // foliage.png at temperature 0.8 / rainfall 0.4.
-        makeTilePngTinted(img, 0, "grass_top", 0x91BD59, 0x2f8a32, 0x155c26, "grass_top");
+        // Assety 26.2 (textures/block/*.png) sa juz kolorowe - nie tintujemy.
+        makeTilePng(img, 0, "grass_top", 0x91BD59, 0x2f8a32, "grass_top");
         makeTilePng(img, 1, "grass_side", 0x7a4e2d, 0x3c9a34, "grass_side");
         makeTilePng(img, 2, "dirt", 0x7b4d2e, 0x5a3823, "dirt");
         makeTilePng(img, 3, "stone", 0x787b82, 0x4f5157, "stone");
         makeTilePng(img, 4, "log_side", 0x8b5728, 0x5b351a, "log_side");
         makeTilePng(img, 5, "log_top", 0xa66c35, 0x5b351a, "log_top");
-        makeTilePngTinted(img, 6, "oak_leaves", 0x77AB2F, 0x278b3c, 0x155c26, "leaves");
+        makeTilePng(img, 6, "oak_leaves", 0x77AB2F, 0x155c26, "leaves");
         makeTilePng(img, 7, "sand", 0xdcc47a, 0xb69b55, "sand");
         makeTilePng(img, 8, "planks", 0xa86f39, 0x5c361c, "planks");
         makeTilePng(img, 9, "craft_top", 0xa86f39, 0x4c2d18, "craft_top");
@@ -64,7 +63,7 @@ public final class TextureAtlas {
         makeTile(img, 14, 0, 0x9c6d35, 0x4a2d10, "chest_top");
         makeTile(img, 15, 0, 0xa97338, 0x4a2d10, "chest_side");
         makeTilePng(img, 16, "farmland", 0x5a3823, 0x3a2417, "farmland");
-        makeTilePngTinted(img, 17, "tall_grass", 0x91BD59, 0x4faa3a, 0x2f8a32, "tall_grass");
+        makeTilePng(img, 17, "tall_grass", 0x91BD59, 0x2f8a32, "tall_grass");
         makeTilePng(img, 18, "wheat_0", 0x4faa3a, 0x2f7a32, "wheat_0");
         makeTilePng(img, 19, "wheat_1", 0x6fb83a, 0x3f9c32, "wheat_1");
         makeTilePng(img, 20, "wheat_2", 0x9fb83a, 0x6f9c32, "wheat_2");
@@ -174,17 +173,6 @@ public final class TextureAtlas {
     private static void makeTilePng(BufferedImage img, int tileIndex, String pngName,
                                     int colA, int colB, String procName) {
         if (!loadPngTile(img, tileIndex, pngName, 0)) {
-            makeTile(img, tileIndex, 0, colA, colB, procName);
-        }
-    }
-
-    /**
-     * makeTile z tintem - PNG jest grayscale, mnozony przez tintColor.
-     * Dla trawy: PNG szary * zielony_biome = zielona trawa.
-     */
-    private static void makeTilePngTinted(BufferedImage img, int tileIndex, String pngName,
-                                          int tintColor, int colA, int colB, String procName) {
-        if (!loadPngTile(img, tileIndex, pngName, tintColor)) {
             makeTile(img, tileIndex, 0, colA, colB, procName);
         }
     }

@@ -1408,7 +1408,7 @@ public class MinecraftGL {
         boolean mouse = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
-        int mx = (int) mxA[0], my = (int) myA[0];
+        int mx = (int) mxA[0], my = (int) myA[1];
         boolean esc = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
         if (esc && !menuEscWasDown) {
             // GuiScreen.keyTyped z MCP 9.40: ESC cofa sie o jeden ekran.
@@ -1564,7 +1564,7 @@ public class MinecraftGL {
         // Auto hover detection - sprawdz pozycje kursora
         double[] mxA = new double[1], myA = new double[1];
         try { glfwGetCursorPos(window, mxA, myA); } catch (Throwable ignored) {}
-        int mx = (int) mxA[0], my = (int) myA[0];
+        int mx = (int) mxA[0], my = (int) myA[1];
         boolean hover = inside(mx, my, x, y, w, h);
         boolean pressed = hover && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         int state = pressed ? 2 : (hover ? 1 : 0);
@@ -1575,7 +1575,7 @@ public class MinecraftGL {
     int drawButtonAuto(int centerX, int y, String text, float scale) {
         double[] mxA = new double[1], myA = new double[1];
         try { glfwGetCursorPos(window, mxA, myA); } catch (Throwable ignored) {}
-        int mx = (int) mxA[0], my = (int) myA[0];
+        int mx = (int) mxA[0], my = (int) myA[1];
         int tw = craft3dgl.ui.FontRenderer.textWidth(text, scale);
         int w = Math.max(120, tw + 48);
         int h = Math.max(32, (int)(craft3dgl.ui.FontRenderer.FONT_CELL * scale) + 14);
@@ -1927,7 +1927,7 @@ public class MinecraftGL {
     void updatePauseMenu(boolean left, boolean esc) {
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
-        int mx = (int) mxA[0], my = (int) myA[0];
+        int mx = (int) mxA[0], my = (int) myA[1];
         if (esc && !escWasDown) {
             if (pauseScreen == 2 || pauseScreen == 3) pauseScreen = 1;
             else if (pauseScreen == 1) pauseScreen = 0;
@@ -3046,7 +3046,7 @@ public class MinecraftGL {
         double[] mx = new double[1], my = new double[1];
         glfwGetCursorPos(window, mx, my);
         int mX = (int) mx[0];
-        int mY = (int) my[0];
+        int mY = (int) my[1];
         if (left && !leftWasDown) clickInventory(mX, mY, false);
         if (right && cursorId > 0 && cursorCount > 0) {
             if (!rightWasDown) dragSlots.clear();
@@ -3744,7 +3744,7 @@ public class MinecraftGL {
         if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS && !eWasDown) { closeVillagerTrade(); return; }
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
-        int mx = (int)mxA[0], my = (int)myA[0];
+        int mx = (int)mxA[0], my = (int)myA[1];
         if (left && !villagerMouseWasDown) {
             int action = craft3dgl.ui.TradeUIRenderer.hitTest(
                     mx, my, width, height, selectedVillagerTrade);
@@ -4355,7 +4355,7 @@ public class MinecraftGL {
     void updateDeathScreen(boolean left) {
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
-        int mx = (int)mxA[0], my = (int)myA[0];
+        int mx = (int)mxA[0], my = (int)myA[1];
         if (left && !deathMouseWasDown) {
             int bw = 300, bh = 46;
             int bx = width / 2 - bw / 2;
@@ -5896,7 +5896,7 @@ public class MinecraftGL {
         glfwGetCursorPos(window, mxA, myA);
         translationSys.setLanguage(language);
         craft3dgl.ui.InventoryUIRenderer.draw(fontRenderer, this::drawStackIcon, translationSys,
-                width, height, (int)mxA[0], (int)myA[0],
+                width, height, (int)mxA[0], (int)myA[1],
                 usingCraftingTable, craftId, craftCount, craftResult,
                 equipId, equipCount, invId, invCount, selectedSlot,
                 cursorId, cursorCount);
@@ -7404,7 +7404,7 @@ public class MinecraftGL {
     void handleChestInput(boolean left, boolean right) {
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
-        int mx = (int) mxA[0], my = (int) myA[0];
+        int mx = (int) mxA[0], my = (int) myA[1];
         boolean eNow = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
         boolean escNow = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
         if (escNow && !escWasDown) { closeChest(); return; }
@@ -7557,7 +7557,7 @@ public class MinecraftGL {
         glfwGetCursorPos(window, mxA, myA);
         translationSys.setLanguage(language);
         craft3dgl.ui.ChestUIRenderer.draw(fontRenderer, this::drawStackIcon, translationSys,
-                width, height, (int)mxA[0], (int)myA[0],
+                width, height, (int)mxA[0], (int)myA[1],
                 openChestIds, openChestCounts, openChestSlots,
                 invId, invCount, selectedSlot, cursorId, cursorCount);
     }
@@ -7803,9 +7803,9 @@ public class MinecraftGL {
 
     int[] creativeItemsForTab() {
         int[] all = CREATIVE_ITEMS;
-        int[] blocks = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, GLASS, CRAFTING_TABLE, DOOR_BOTTOM, CHEST, WATER, FARMLAND, TALL_GRASS};
+        int[] blocks = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, GLASS, CRAFTING_TABLE, CHEST, DOOR_BOTTOM, FARMLAND, TALL_GRASS, WATER};
         int[] tools = {ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE};
-        int[] food = {ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_BREAD, ITEM_WHEAT};
+        int[] food = {ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_BREAD};
         int[] base = creativeTab == 1 ? blocks : creativeTab == 2 ? tools : creativeTab == 3 ? food : all;
         String q = creativeSearch.toString().trim().toLowerCase();
         if (q.isEmpty()) return base;
@@ -7820,7 +7820,7 @@ public class MinecraftGL {
     void handleCreativeInvInput(boolean left, boolean right) {
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
-        int mx = (int) mxA[0], my = (int) myA[0];
+        int mx = (int) mxA[0], my = (int) myA[1];
         boolean eNow = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
         boolean back = glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
         if (back && !backspaceWasDown && creativeSearch.length() > 0) creativeSearch.deleteCharAt(creativeSearch.length() - 1);
@@ -7956,7 +7956,7 @@ public class MinecraftGL {
         glfwGetCursorPos(window, mxA, myA);
         translationSys.setLanguage(language);
         craft3dgl.ui.CreativeUIRenderer.draw(fontRenderer, this::drawStackIcon, translationSys,
-                width, height, (int)mxA[0], (int)myA[0],
+                width, height, (int)mxA[0], (int)myA[1],
                 creativeItemsForTab(), creativeTab, creativeSearch.toString(),
                 invId, invCount, selectedSlot, cursorId, cursorCount);
     }
