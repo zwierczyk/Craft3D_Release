@@ -71,6 +71,10 @@ public final class CraftingSystemGL {
                 Recipe r = matchDoor(id, b, size);
                 if (!r.empty()) return r;
             }
+            if (nonEmpty == 6) {
+                Recipe r = matchGlassPane(id, b, size);
+                if (!r.empty()) return r;
+            }
         }
 
         // === Bread: 3 wheat horizontally (1x3 lub 3x1) ===
@@ -277,6 +281,27 @@ public final class CraftingSystemGL {
         for (int u : used) consume[u] = 1;
         // Minecraft 1.12: szesc desek daje trzy debowe drzwi.
         return new Recipe(MinecraftGL.DOOR_BOTTOM, 3, consume);
+    }
+
+    private static Recipe matchGlassPane(int[] id, Bounds b, int size) {
+        if (b.w != 3 || b.h != 3) return EMPTY;
+        int[] used = new int[6];
+        int k = 0;
+        for (int x = 0; x < 3; x++) {
+            int top = idx(b.x + x, b.y, size);
+            int bot = idx(b.x + x, b.y + 2, size);
+            if (id[top] != MinecraftGL.GLASS || id[bot] != MinecraftGL.GLASS) return EMPTY;
+            used[k++] = top;
+            used[k++] = bot;
+        }
+        int mid0 = idx(b.x, b.y + 1, size);
+        int mid2 = idx(b.x + 2, b.y + 1, size);
+        if (id[mid0] != 0 || id[mid2] != 0) return EMPTY;
+        if (!onlyTheseInBounds(id, b, size, used)) return EMPTY;
+        int[] consume = new int[9];
+        for (int u : used) consume[u] = 1;
+        // Minecraft: szesc szkla (gora + dol) daje szesnascie szyb.
+        return new Recipe(MinecraftGL.GLASS_PANE, 16, consume);
     }
 
     private static boolean isMatPickaxeAxe(int mat) {

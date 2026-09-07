@@ -23,6 +23,7 @@ public final class ItemNames {
             case DOOR_BOTTOM: case DOOR_TOP: return en ? "Oak Door" : "Debowe drzwi";
             case CHEST: return en ? "Chest" : "Skrzynka";
             case GLASS: return en ? "Glass" : "Szkło";
+            case GLASS_PANE: return en ? "Glass Pane" : "Szklana szyba";
             case WATER: return en ? "Water" : "Woda";
             case ITEM_STICK: return en ? "Sticks" : "Patyki";
             case ITEM_WOOD_PICKAXE: return en ? "Wood Pickaxe" : "Drewniany kilof";
@@ -65,6 +66,7 @@ public final class ItemNames {
             case "door": case "oak_door": case "wooden_door": case "drzwi": return DOOR_BOTTOM;
             case "chest": return CHEST;
             case "glass": case "szklo": case "szkło": return GLASS;
+            case "glass_pane": case "pane": case "szklana_szyba": case "szklana szyba": case "szyba": return GLASS_PANE;
             case "water": return WATER;
             case "stick": return ITEM_STICK;
             case "wood_pickaxe": case "wpick": return ITEM_WOOD_PICKAXE;

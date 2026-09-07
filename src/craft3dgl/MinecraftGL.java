@@ -70,6 +70,7 @@ public class MinecraftGL {
     public static final int DOOR_TOP = 17;
     public static final int CHEST = 18;
     public static final int GLASS = 31;
+    public static final int GLASS_PANE = 32;
     // ====== FARMING ======
     public static final int FARMLAND = 50;        // ziemia po motyce
     public static final int TALL_GRASS = 51;      // dekoracyjna trawka, daje seeds
@@ -420,7 +421,7 @@ public class MinecraftGL {
     int creativeTab = 0;
     StringBuilder creativeSearch = new StringBuilder();
     boolean backspaceWasDown = false;
-    static final int[] CREATIVE_ITEMS = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, GLASS, CRAFTING_TABLE, DOOR_BOTTOM, CHEST, WATER, FARMLAND, TALL_GRASS, ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE, ITEM_SEEDS, ITEM_WHEAT, ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_EMERALD, ITEM_BREAD};
+    static final int[] CREATIVE_ITEMS = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, GLASS, GLASS_PANE, CRAFTING_TABLE, DOOR_BOTTOM, CHEST, WATER, FARMLAND, TALL_GRASS, ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE, ITEM_SEEDS, ITEM_WHEAT, ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_EMERALD, ITEM_BREAD};
 
     final DoorSystem doorSystem = new DoorSystem();
     final java.util.HashMap<Long, Integer> doorMeta = doorSystem.meta;
@@ -5348,6 +5349,7 @@ public class MinecraftGL {
         // Wszystkie NIE-solid layers (CUTOUT + TRANSLUCENT + brak collision) -> NIE occlude
         if (id == LEAVES) return false;                        // CUTOUT_MIPPED
         if (id == GLASS) return false;                         // CUTOUT, BlockBreakable
+        if (id == GLASS_PANE) return false;                    // CUTOUT, GlassPaneBlock
         if (id == TALL_GRASS) return false;                    // CUTOUT (cross)
         if (id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3) return false;  // CUTOUT
         if (id == WATER) return false;                         // TRANSLUCENT
@@ -5403,12 +5405,13 @@ public class MinecraftGL {
                     boolean isCross = (id == TALL_GRASS || id == WHEAT_0 || id == WHEAT_1 || id == WHEAT_2 || id == WHEAT_3);
                     boolean isLeaves = (id == LEAVES);
                     boolean isGlass = (id == GLASS);
+                    boolean isPane = (id == GLASS_PANE);
                     boolean isWater = (id == WATER);
                     // Klasyfikacja per layer
                     if (layer == MODERN_LAYER_SOLID) {
-                        if (isCross || isLeaves || isGlass || isWater) continue;
+                        if (isCross || isLeaves || isGlass || isPane || isWater) continue;
                     } else if (layer == MODERN_LAYER_CUTOUT) {
-                        if (!isCross && !isLeaves && !isGlass) continue;
+                        if (!isCross && !isLeaves && !isGlass && !isPane) continue;
                     } else if (layer == MODERN_LAYER_TRANSLUCENT) {
                         if (!isWater) continue;
                     }
@@ -5420,6 +5423,11 @@ public class MinecraftGL {
                     // Woda - specjalny mesh z lower top
                     if (isWater) {
                         quads += addWaterFacesModern(bb, bx, by, bz);
+                        continue;
+                    }
+                    // Glass pane - cienkie sciany laczace sie z sasiadami
+                    if (isPane) {
+                        quads += addPaneFacesModern(bb, bx, by, bz);
                         continue;
                     }
                     // Normalny blok - 6 scian z MC-style face culling (canOccludeModern)
@@ -5526,6 +5534,85 @@ public class MinecraftGL {
             quads++;
         }
         return quads;
+    }
+
+    boolean isPaneBlock(int bx, int by, int bz) {
+        return inWorld(bx, by, bz) && (world[bx][by][bz] & 0xff) == GLASS_PANE;
+    }
+
+    /** Glass pane - pionowe cienkie sciany (2 px) laczace sie z sasiednimi panes. */
+    int addPaneFacesModern(craft3dgl.blaze3d.vertex.BufferBuilder bb, int x, int y, int z) {
+        int tile = tileFor(GLASS_PANE, 1);
+        float u0 = (float) atlasU0(tile);
+        float u1 = (float) atlasU1(tile);
+        float v0 = (float) atlasV0();
+        float v1 = (float) atlasV1();
+        int skyLv = 15, blLv = 0;
+        if (lightEngine != null && inWorld(x, y, z)) {
+            skyLv = lightEngine.getSky(x, y, z);
+            blLv = lightEngine.getBlockLight(x, y, z);
+        }
+        int lu = (int) ((blLv + 0.5f) * 16f);
+        int lv = (int) ((skyLv + 0.5f) * 16f);
+        boolean e = isPaneBlock(x + 1, y, z);
+        boolean w = isPaneBlock(x - 1, y, z);
+        boolean s = isPaneBlock(x, y, z + 1);
+        boolean n = isPaneBlock(x, y, z - 1);
+        double x0, x1, z0, z1;
+        int quads = 0;
+        if (!e && !w && !s && !n) {
+            // Samotna szyba - maly krzyzyk w srodku komorki (jak vanilla post)
+            x0 = x + 0.3125; x1 = x + 0.6875;
+            z0 = z + 0.3125; z1 = z + 0.6875;
+            quads += paneWallX(bb, x0, x1, y, z + 0.4375, z + 0.5625, u0, u1, v0, v1, lu, lv);
+            quads += paneWallZ(bb, z0, z1, y, x + 0.4375, x + 0.5625, u0, u1, v0, v1, lu, lv);
+            return quads;
+        }
+        // Sciana w osi X (polaczona E/W) - cala lub polowa komorki
+        if (e || w) {
+            if (e && w) { x0 = x; x1 = x + 1; }
+            else if (e) { x0 = x + 0.5; x1 = x + 1; }
+            else { x0 = x; x1 = x + 0.5; }
+            quads += paneWallX(bb, x0, x1, y, z + 0.4375, z + 0.5625, u0, u1, v0, v1, lu, lv);
+        }
+        // Sciana w osi Z (polaczona N/S)
+        if (s || n) {
+            if (s && n) { z0 = z; z1 = z + 1; }
+            else if (s) { z0 = z + 0.5; z1 = z + 1; }
+            else { z0 = z; z1 = z + 0.5; }
+            quads += paneWallZ(bb, z0, z1, y, x + 0.4375, x + 0.5625, u0, u1, v0, v1, lu, lv);
+        }
+        return quads;
+    }
+
+    /** Sciana pane rownolegla do osi X (patrzy na +Z/-Z). Zwraca liczbe quadow. */
+    int paneWallX(craft3dgl.blaze3d.vertex.BufferBuilder bb,
+                  double x0, double x1, int y, double z0, double z1,
+                  float u0, float u1, float v0, float v1, int lu, int lv) {
+        vtxModern(bb, u0, v0, x0, y, z0, 0.85f, lu, lv);
+        vtxModern(bb, u1, v0, x1, y, z0, 0.85f, lu, lv);
+        vtxModern(bb, u1, v1, x1, y + 1, z0, 0.85f, lu, lv);
+        vtxModern(bb, u0, v1, x0, y + 1, z0, 0.85f, lu, lv);
+        vtxModern(bb, u0, v0, x1, y, z1, 0.85f, lu, lv);
+        vtxModern(bb, u1, v0, x0, y, z1, 0.85f, lu, lv);
+        vtxModern(bb, u1, v1, x0, y + 1, z1, 0.85f, lu, lv);
+        vtxModern(bb, u0, v1, x1, y + 1, z1, 0.85f, lu, lv);
+        return 2;
+    }
+
+    /** Sciana pane rownolegla do osi Z (patrzy na +X/-X). Zwraca liczbe quadow. */
+    int paneWallZ(craft3dgl.blaze3d.vertex.BufferBuilder bb,
+                  double z0, double z1, int y, double x0, double x1,
+                  float u0, float u1, float v0, float v1, int lu, int lv) {
+        vtxModern(bb, u0, v0, x0, y, z1, 0.85f, lu, lv);
+        vtxModern(bb, u1, v0, x0, y, z0, 0.85f, lu, lv);
+        vtxModern(bb, u1, v1, x0, y + 1, z0, 0.85f, lu, lv);
+        vtxModern(bb, u0, v1, x0, y + 1, z1, 0.85f, lu, lv);
+        vtxModern(bb, u0, v0, x1, y, z0, 0.85f, lu, lv);
+        vtxModern(bb, u1, v0, x1, y, z1, 0.85f, lu, lv);
+        vtxModern(bb, u1, v1, x1, y + 1, z1, 0.85f, lu, lv);
+        vtxModern(bb, u0, v1, x1, y + 1, z0, 0.85f, lu, lv);
+        return 2;
     }
 
     /** Analog face() ale wysyla do BufferBuildera zamiast glVertex3d. */
@@ -6916,6 +7003,7 @@ public class MinecraftGL {
         if (id == LEAVES && other == LEAVES) return false;
         if (id == GLASS && other == GLASS) return false;
         if (other == GLASS) return true;
+        if (other == GLASS_PANE) return true;
         // tall_grass i wheat sa "cross" - inne bloki widoczne za nimi
         if (other == TALL_GRASS || other == WHEAT_0 || other == WHEAT_1 || other == WHEAT_2 || other == WHEAT_3) return true;
         return false;
@@ -7803,7 +7891,7 @@ public class MinecraftGL {
 
     int[] creativeItemsForTab() {
         int[] all = CREATIVE_ITEMS;
-        int[] blocks = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, GLASS, CRAFTING_TABLE, CHEST, DOOR_BOTTOM, FARMLAND, TALL_GRASS, WATER};
+        int[] blocks = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, GLASS, GLASS_PANE, CRAFTING_TABLE, CHEST, DOOR_BOTTOM, FARMLAND, TALL_GRASS, WATER};
         int[] tools = {ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE};
         int[] food = {ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_BREAD};
         int[] misc = {ITEM_SEEDS, ITEM_WHEAT, ITEM_EMERALD};

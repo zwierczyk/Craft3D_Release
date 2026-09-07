@@ -36,6 +36,7 @@ public final class ChatCommands {
     };
     private static final String[] GIVE_ITEMS = {
             "grass", "dirt", "stone", "wood", "leaves", "sand", "planks", "glass",
+            "glass_pane",
             "crafting_table", "door", "chest", "water", "stick",
             "wood_pickaxe", "stone_pickaxe", "wood_axe", "stone_axe",
             "wood_shovel", "stone_shovel", "wood_sword", "stone_sword",
