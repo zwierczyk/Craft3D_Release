@@ -35,8 +35,6 @@ public final class CreativeUIRenderer {
     public static final int PANEL_H = TEX_H * SCALE;       // 408
     public static final int SLOT_PITCH = TEX_SLOT * SCALE; // 54
     public static final int SLOT_SIZE = 16 * SCALE;        // 48 (jak vanilla)
-    public static final int TAB_W = 28 * SCALE;            // 84
-    public static final int TAB_H = 32 * SCALE;            // 96
     public static final int SEARCH_W = 80 * SCALE;
     public static final int SEARCH_X_BTN_W = 12 * SCALE;
     public static final int TRASH_W = 16 * SCALE;          // 48
@@ -84,14 +82,18 @@ public final class CreativeUIRenderer {
 
     public static int panelX(int screenW) { return screenW / 2 - PANEL_W / 2; }
     public static int panelY(int screenH) { return screenH / 2 - PANEL_H / 2; }
-    // Tabs na gorze panelu (MC style: topRow tabs Y = -28 * SCALE)
-    public static int tabY(int screenH) { return panelY(screenH) - 28 * SCALE; }
-    public static int tabX(int screenW, int tab) {
-        // Male taby, 26 * SCALE + 4 pixel padding
-        return panelX(screenW) + tab * (26 * SCALE + 4);
-    }
-    public static int tabHeightSmall() { return 28 * SCALE; }
-    public static int tabWidthSmall() { return 26 * SCALE; }
+
+    // ==== ZAKLADKI KREATYWNE (pionowa belka po lewej, jak w vanilla MC) ====
+    private static final int TAB_RAIL_W = 22 * SCALE;      // 66
+    private static final int TAB_RAIL_H = 24 * SCALE;      // 72
+    private static final int TAB_STEP = TAB_RAIL_H + 2;    // 74 (2 px odstepu)
+    private static final int TAB_OVERLAP = 6 * SCALE;      // 18 px wchodzi na panel
+
+    public static int tabRailX(int screenW) { return panelX(screenW) - TAB_RAIL_W + TAB_OVERLAP; }
+    public static int tabRailY(int screenH, int tab) { return panelY(screenH) + 4 * SCALE + tab * TAB_STEP; }
+    public static int tabCount() { return 5; }
+    public static int tabHeightSmall() { return TAB_RAIL_H; }
+    public static int tabWidthSmall() { return TAB_RAIL_W; }
     // Grid slotow MC: x=9, y=18
     public static int gridX(int screenW) { return panelX(screenW) + 9 * SCALE; }
     public static int gridY(int screenH) { return panelY(screenH) + 18 * SCALE; }
@@ -119,49 +121,6 @@ public final class CreativeUIRenderer {
         int px = panelX(screenW);
         int py = panelY(screenH);
 
-        // ==== TABS - male zakladki z ikonami przedmiotow (bez napisow) ====
-        // Ikony reprezentujace kategorie: All=grass, Bloki=dirt, Narzedzia=stone_axe, Jedzenie=bread
-        int[] tabIcons = {
-            craft3dgl.MinecraftGL.GRASS,           // All
-            craft3dgl.MinecraftGL.DIRT,             // Bloki
-            craft3dgl.MinecraftGL.ITEM_STONE_AXE,   // Narzedzia
-            craft3dgl.MinecraftGL.ITEM_BREAD        // Jedzenie
-        };
-        String[] tabNames = {
-            trans.tr("creative.all"), trans.tr("creative.blocks"),
-            trans.tr("creative.tools"), trans.tr("creative.food")
-        };
-        int tabHeight = 28 * SCALE;
-        int tabY2 = py - tabHeight + 4;
-        int tabWSmall = 26 * SCALE;   // waskie taby (nie 84)
-        int hoverTab = -1;
-        for (int i = 0; i < 4; i++) {
-            int tx = px + i * (tabWSmall + 4);   // troche odstepu miedzy
-            boolean selected = (i == creativeTab);
-            glDisable(GL_TEXTURE_2D);
-            if (selected) {
-                glColor4f(0.86f, 0.86f, 0.86f, 1f);
-            } else {
-                glColor4f(0.55f, 0.55f, 0.55f, 1f);
-            }
-            UIStyle.quad(tx, tabY2, tabWSmall, tabHeight);
-            glColor4f(0.20f, 0.20f, 0.20f, 1f);
-            UIStyle.lineRect(tx, tabY2, tabWSmall, tabHeight);
-            if (selected) {
-                glColor4f(0.86f, 0.86f, 0.86f, 1f);
-                UIStyle.quad(tx + 1, tabY2 + tabHeight - 2, tabWSmall - 2, 4);
-            }
-            glEnable(GL_TEXTURE_2D);
-            // IKONA przedmiotu na srodku taba (nie napis)
-            int iconSize = 16 * SCALE;   // 48
-            int iconOff = (tabWSmall - iconSize) / 2;
-            int iconY = tabY2 + (tabHeight - iconSize) / 2 - 2;
-            iconDrawer.drawStackIcon(tabIcons[i], 1, tx + iconOff, iconY, iconSize);
-            if (mx >= tx && mx < tx + tabWSmall && my >= tabY2 && my < tabY2 + tabHeight) {
-                hoverTab = i;
-            }
-        }
-
         // ==== PANEL BACKGROUND (creative_items.png, fragment 176x136) ====
         if (texCreative > 0) {
             glEnable(GL_TEXTURE_2D);
@@ -184,6 +143,50 @@ public final class CreativeUIRenderer {
 
         // Tytul (MC: x=8, y=6, kolor 4210752 = 0x404040)
         font.drawTextDark(trans.tr("creative.title"), px + 8 * SCALE, py + 6 * SCALE, 0.55f);
+
+        // ==== ZAKLADKI: pionowa belka kategorii po lewej (jak vanilla MC) ====
+        int[] tabIcons = {
+            craft3dgl.MinecraftGL.GRASS,           // All
+            craft3dgl.MinecraftGL.DIRT,             // Bloki
+            craft3dgl.MinecraftGL.ITEM_STONE_AXE,   // Narzedzia
+            craft3dgl.MinecraftGL.ITEM_BREAD,        // Jedzenie
+            craft3dgl.MinecraftGL.ITEM_EMERALD       // Inne
+        };
+        String[] tabNames = {
+            trans.tr("creative.all"), trans.tr("creative.blocks"),
+            trans.tr("creative.tools"), trans.tr("creative.food"),
+            trans.tr("creative.misc")
+        };
+        int tabCount = craft3dgl.ui.CreativeUIRenderer.tabCount();
+        int tabX = craft3dgl.ui.CreativeUIRenderer.tabRailX(screenW);
+        int tabW = craft3dgl.ui.CreativeUIRenderer.tabWidthSmall();
+        int tabH = craft3dgl.ui.CreativeUIRenderer.tabHeightSmall();
+        int hoverTab = -1;
+        for (int i = 0; i < tabCount; i++) {
+            int ty = craft3dgl.ui.CreativeUIRenderer.tabRailY(screenH, i);
+            boolean selected = (i == creativeTab);
+            // Wybrany tab nachodzi na panel (OVERLAP), reszta wystaje w lewo.
+            glDisable(GL_TEXTURE_2D);
+            if (selected) {
+                glColor4f(0.87f, 0.87f, 0.87f, 1f);
+                UIStyle.quad(tabX, ty, tabW, tabH);
+                glColor4f(0.13f, 0.13f, 0.13f, 1f);
+                UIStyle.quad(tabX + tabW, ty, 2 * SCALE, tabH);
+            } else {
+                glColor4f(0.47f, 0.47f, 0.47f, 1f);
+                UIStyle.quad(tabX, ty, tabW, tabH);
+                glColor4f(0.12f, 0.12f, 0.12f, 1f);
+                UIStyle.lineRect(tabX, ty, tabW, tabH);
+            }
+            glEnable(GL_TEXTURE_2D);
+            int iconSize = 14 * SCALE;
+            int iconOff = (tabW - iconSize) / 2;
+            int iconY = ty + (tabH - iconSize) / 2 - 1;
+            iconDrawer.drawStackIcon(tabIcons[i], 1, tabX + iconOff, iconY, iconSize);
+            if (mx >= tabX && mx < tabX + tabW && my >= ty && my < ty + tabH) {
+                hoverTab = i;
+            }
+        }
 
         // ==== GRID SLOTOW 9x5 = 45 (icons wrisujemy na wierzchu PNG slotow) ====
         int gX = gridX(screenW);

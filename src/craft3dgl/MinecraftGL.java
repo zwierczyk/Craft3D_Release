@@ -7806,7 +7806,13 @@ public class MinecraftGL {
         int[] blocks = {GRASS, DIRT, STONE, SAND, WOOD, PLANKS, LEAVES, GLASS, CRAFTING_TABLE, CHEST, DOOR_BOTTOM, FARMLAND, TALL_GRASS, WATER};
         int[] tools = {ITEM_STICK, ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_WOOD_AXE, ITEM_STONE_AXE, ITEM_WOOD_SHOVEL, ITEM_STONE_SHOVEL, ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_WOOD_HOE, ITEM_STONE_HOE};
         int[] food = {ITEM_PORK, ITEM_BEEF, ITEM_MUTTON, ITEM_BREAD};
-        int[] base = creativeTab == 1 ? blocks : creativeTab == 2 ? tools : creativeTab == 3 ? food : all;
+        int[] misc = {ITEM_SEEDS, ITEM_WHEAT, ITEM_EMERALD};
+        int[] base;
+        if (creativeTab == 1) base = blocks;
+        else if (creativeTab == 2) base = tools;
+        else if (creativeTab == 3) base = food;
+        else if (creativeTab == 4) base = misc;
+        else base = all;
         String q = creativeSearch.toString().trim().toLowerCase();
         if (q.isEmpty()) return base;
         int[] tmp = new int[base.length];
@@ -7829,15 +7835,14 @@ public class MinecraftGL {
         if (eNow && !eWasDown) { closeCreativeInv(); return; }
         // Uzywamy pozycji z CreativeUIRenderer (ten sam layout co draw)
         int slot = craft3dgl.ui.CreativeUIRenderer.SLOT_PITCH;
+        int tabX = craft3dgl.ui.CreativeUIRenderer.tabRailX(width);
         int tabWSmall = craft3dgl.ui.CreativeUIRenderer.tabWidthSmall();
         int tabHSmall = craft3dgl.ui.CreativeUIRenderer.tabHeightSmall();
-        int panelYFinal = craft3dgl.ui.CreativeUIRenderer.panelY(height);
-        int tabY = panelYFinal - tabHSmall + 4;
-        // Kliki w male tabs (4 tabs z ikonami nad panelem)
+        // Kliki w pionowa belke kategorii (lewa strona panelu)
         if (left && !leftWasDown) {
-            for (int i = 0; i < 4; i++) {
-                int tx = craft3dgl.ui.CreativeUIRenderer.tabX(width, i);
-                if (inside(mx, my, tx, tabY, tabWSmall, tabHSmall)) {
+            for (int i = 0; i < craft3dgl.ui.CreativeUIRenderer.tabCount(); i++) {
+                int ty = craft3dgl.ui.CreativeUIRenderer.tabRailY(height, i);
+                if (inside(mx, my, tabX, ty, tabWSmall, tabHSmall)) {
                     creativeTab = i; creativeScroll = 0; creativeSearch.setLength(0);
                     return;
                 }

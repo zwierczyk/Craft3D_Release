@@ -79,6 +79,7 @@ public final class Translations {
         map.put("creative.blocks", new String[]{"Bloki", "Blocks"});
         map.put("creative.tools", new String[]{"Narzędzia", "Tools"});
         map.put("creative.food", new String[]{"Jedzenie", "Food"});
+        map.put("creative.misc", new String[]{"Inne", "Miscellaneous"});
         map.put("creative.search", new String[]{"Szukaj...", "Search..."});
         map.put("creative.trash.short", new String[]{"Kosz", "Trash"});
         map.put("inv.title", new String[]{"Ekwipunek", "Inventory"});
