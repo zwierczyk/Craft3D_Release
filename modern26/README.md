@@ -51,9 +51,14 @@ zostana automatycznie rozpakowane do `assets/minecraft/` (katalog jest w
 modern26/
   src/craft3dmodern/
     Main.java            # okno GLFW + petla (GL 3.3 CORE)
-    client/Game.java     # stan gry / proof-of-life ekranu tytulowego
-    render/              # ShaderProgram, Texture, GuiBlit
-    test/                # AssetsExtractor, AssetsTest (headless)
+    util/Json.java       # minimalny, samowystarczalny parser JSON
+    client/
+      Game.java          # ekrany: tytulowy / wybor swiata / opcje
+      I18n.java          # en_us z assetow + PL dla uzywanych kluczy
+      font/FontRenderer  # font 26.2 z default.json (layout wg BitmapProvider)
+      ui/Button.java     # przycisk vanilla 26.2 (nine-slice border z .mcmeta)
+    render/              # ShaderProgram, Texture, GuiBlit (tint/rect)
+    test/                # AssetsExtractor, AssetsTest, FontTest (headless)
   assets/
     minecraft-26.2.zip   # ORYGINALNE assety 26.2 (tekstury, modele, lang, font)
     pack.png, version.json
@@ -77,6 +82,7 @@ modern26/
 ## Kamienie milowe
 
 - [x] M1: szkielet, GL 3.3 core, shader+tekstura, logo i przyciski 26.2
-- [ ] M2: font + GuiGraphics, ekran tytulowy z napisami (TitleScreen 26.2)
+- [x] M2: font z assetow (proporcjonalny, PL), przyciski nine-slice, I18n
+      (en_us + PL), splash, ekran tytulowy / wybor swiata / opcje, mysz i ESC
 - [ ] M3: rejestr blokow z assetow (modele+blockstate'y), chunk mesh
 - [ ] M4: gracz, fizyka, interakcje

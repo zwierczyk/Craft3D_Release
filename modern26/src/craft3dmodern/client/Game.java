@@ -1,71 +1,222 @@
 package craft3dmodern.client;
 
+import java.awt.image.BufferedImage;
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
+import craft3dmodern.client.font.FontRenderer;
+import craft3dmodern.client.ui.Button;
 import craft3dmodern.render.GuiBlit;
 import craft3dmodern.render.Texture;
 
-import static org.lwjgl.opengl.GL11.GL_BLEND;
-import static org.lwjgl.opengl.GL11.GL_ONE_MINUS_SRC_ALPHA;
-import static org.lwjgl.opengl.GL11.GL_SRC_ALPHA;
-import static org.lwjgl.opengl.GL11.glBlendFunc;
-import static org.lwjgl.opengl.GL11.glEnable;
-
 /**
- * Proba koncepcyjna ekranu tytulowego (pierwowzor: TitleScreen 26.2):
- * ciemne tlo, logo, przyciski z widgets 26.2. Bez fontu - dopiero M2.
+ * Gra: ekrany GUI wzorowane na 26.2 (TitleScreen / SelectWorld / Options).
+ * Wszystkie wspolrzedne w pikselach okna; przyciski 400x40 (odpowiednik
+ * 200x20 w gui scale 2).
  */
 public final class Game {
+    public enum Screen { TITLE, WORLD, OPTIONS }
+
     private GuiBlit gui;
-    private int texLogo = 0;
-    private int texButton = 0;
-    private int texButtonHover = 0;
+    private FontRenderer font;
+    private int logoTexture;
+    private int logoW, logoH;
 
-    private long startNanos = System.nanoTime();
-    private int frames = 0;
-    private long fpsTimer = System.currentTimeMillis();
+    private Screen screen = Screen.TITLE;
+    private final List<String> splashes = new ArrayList<String>();
+    private String splash = "";
+    private float splashTimer = 0;
+    private final Random random = new Random();
+    private boolean quitRequested = false;
 
-    public void init() {
+    // stan myszy/klawiszy
+    private boolean mouseWasDown = false;
+    private boolean escWasDown = false;
+
+    public void init() throws IOException {
+        I18n.init();
         gui = new GuiBlit();
-        gui.setScreenSize(1280, 720);
-        try {
-            texLogo = Texture.load("minecraft/textures/gui/title/minecraft.png", false);
-            texButton = Texture.load("minecraft/textures/gui/sprites/widget/button.png", false);
-            texButtonHover = Texture.load("minecraft/textures/gui/sprites/widget/button_highlighted.png", false);
-            System.out.println("[Game] vanilla 26.2 textures loaded: logo=" + texLogo
-                    + " button=" + texButton + " hover=" + texButtonHover);
-        } catch (IOException e) {
-            System.err.println("[Game] texture load failed: " + e.getMessage());
+        font = FontRenderer.load();
+        font.upload();
+
+        BufferedImage logo = Texture.decode("minecraft/textures/gui/title/minecraft.png");
+        logoW = logo.getWidth();
+        logoH = logo.getHeight();
+        logoTexture = Texture.upload(logo, false);
+
+        File splashesFile = new File(Texture.assetRoot(), "minecraft/texts/splashes.txt");
+        if (splashesFile.isFile()) {
+            for (String line : Files.readAllLines(splashesFile.toPath(), StandardCharsets.UTF_8)) {
+                if (!line.trim().isEmpty()) splashes.add(line);
+            }
+        }
+        pickSplash();
+    }
+
+    private void pickSplash() {
+        if (!splashes.isEmpty()) splash = splashes.get(random.nextInt(splashes.size()));
+        else splash = "";
+    }
+
+    /** Render klatki; zwraca true, gdy gra ma sie zamknac. */
+    public boolean render(double dt, int fbw, int fbh,
+                          double mouseX, double mouseY,
+                          boolean leftDown, boolean escDown) {
+        gui.setScreenSize(fbw, fbh);
+        gui.begin();
+
+        float cx = fbw / 2f;
+        splashTimer -= (float) dt;
+        if (splashTimer <= 0) {
+            pickSplash();
+            splashTimer = 4.5f + random.nextFloat() * 4f;
+        }
+
+        boolean clicked = leftDown && !mouseWasDown;
+        boolean esc = escDown && !escWasDown;
+        mouseWasDown = leftDown;
+        escWasDown = escDown;
+
+        if (esc) {
+            if (screen == Screen.WORLD || screen == Screen.OPTIONS) screen = Screen.TITLE;
+        }
+
+        if (screen == Screen.TITLE) {
+            drawTitle(cx, fbw, fbh, (float) mouseX, (float) mouseY, clicked);
+        } else if (screen == Screen.WORLD) {
+            drawWorld(cx, fbw, fbh, (float) mouseX, (float) mouseY, clicked);
+        } else {
+            drawOptions(cx, fbw, fbh, (float) mouseX, (float) mouseY, clicked);
+        }
+
+        // wersja w lewym dolnym rogu
+        String version = "Minecraft 26.2  |  Craft3D Modern";
+        font.draw(gui, version, 8, fbh - 20, 1, 0xFFFFFFFF, true);
+        return quitRequested;
+    }
+
+    // ------------------------------------------------------------------
+    // TitleScreen (26.2: logo + przyciski + splash)
+    // ------------------------------------------------------------------
+    private void drawTitle(float cx, int fbw, int fbh, float mx, float my, boolean clicked) {
+        float logoWidth = Math.min(fbw * 0.55f, 620f);
+        float logoHeight = logoWidth * logoH / logoW;
+        float logoX = (fbw - logoWidth) / 2f;
+        float logoY = 40;
+        gui.draw(logoTexture, logoX, logoY, logoWidth, logoHeight, 0, 0, 1, 1);
+
+        // splash (zolty, bez rotacji na M2)
+        if (!splash.isEmpty()) {
+            float sw = font.width(splash, 2);
+            font.draw(gui, splash, Math.min(fbw - 8 - sw, cx + 40), logoY + logoHeight + 6,
+                    2, 0xFFFF00, true);
+        }
+
+        float bw = 400, bh = 40;
+        float bx = cx - bw / 2;
+        List<Button> buttons = new ArrayList<Button>();
+
+        Button sp = new Button(bx, 300, bw, bh);
+        sp.label = I18n.get("menu.singleplayer");
+        buttons.add(sp);
+
+        Button mp = new Button(bx, 352, bw, bh);
+        mp.label = I18n.get("menu.multiplayer");
+        mp.enabled = false;
+        buttons.add(mp);
+
+        Button options = new Button(cx - 200, 444, 196, 40);
+        options.label = I18n.get("menu.options");
+        buttons.add(options);
+        Button quit = new Button(cx + 4, 444, 196, 40);
+        quit.label = I18n.get("menu.quit");
+        buttons.add(quit);
+        Button lang = new Button(cx - 256, 444, 52, 40);
+        lang.label = I18n.isPl() ? "EN" : "PL";
+        buttons.add(lang);
+
+        drawButtons(buttons, mx, my);
+        if (clicked) {
+            if (sp.hover(mx, my)) screen = Screen.WORLD;
+            else if (options.hover(mx, my)) screen = Screen.OPTIONS;
+            else if (lang.hover(mx, my)) toggleLanguage();
+            else if (quit.hover(mx, my)) quitRequested = true;
         }
     }
 
-    public void render(double dt) {
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        gui.begin();
+    // ------------------------------------------------------------------
+    // SelectWorldScreen (brak swiata; create w M3)
+    // ------------------------------------------------------------------
+    private void drawWorld(float cx, int fbw, int fbh, float mx, float my, boolean clicked) {
+        String title = I18n.get("selectWorld.title");
+        font.draw(gui, title, cx - font.width(title, 2) / 2, 26, 2, 0xFFFFFFFF, true);
 
-        // Tlo daje glClearColor w Main (ciemny granat, jak overlay menu 26.2).
+        String empty = I18n.get("selectWorld.empty");
+        font.draw(gui, empty, cx - font.width(empty, 2) / 2, 220, 2, 0xFFFFFFFF, true);
 
-        // Logo Minecraft 26.2 (1024x256): wycentrowane w gornej czesci.
-        float logoW = 512f;
-        float logoH = logoW * 256f / 1024f;
-        gui.draw(texLogo, (1280 - logoW) / 2f, 60, logoW, logoH, 0, 0, 1, 1);
+        float bw = 400, bh = 40;
+        float bx = cx - bw / 2;
+        List<Button> buttons = new ArrayList<Button>();
+        Button select = new Button(bx, 360, bw, bh);
+        select.label = I18n.get("selectWorld.select");
+        select.enabled = false;
+        buttons.add(select);
+        Button create = new Button(bx, 412, bw, bh);
+        create.label = I18n.get("selectWorld.create");
+        create.enabled = false;
+        buttons.add(create);
+        Button back = new Button(bx, 520, bw, bh);
+        back.label = I18n.get("gui.back");
+        buttons.add(back);
 
-        // Dwa przyciski (widgets 26.2) - Singleplayer / Multiplayer pozycje pogladowe.
-        float bw = 400f, bh = 40f;
-        float bx = (1280 - bw) / 2f;
-        gui.draw(texButtonHover, bx, 300, bw, bh, 0, 0, 1, 1);
-        gui.draw(texButton, bx, 352, bw, bh, 0, 0, 1, 1);
-        gui.draw(texButton, bx, 404, bw, bh, 0, 0, 1, 1);
+        drawButtons(buttons, mx, my);
+        if (clicked && back.hover(mx, my)) screen = Screen.TITLE;
+    }
 
-        frames++;
-        long now = System.currentTimeMillis();
-        if (now - fpsTimer >= 1000) {
-            System.out.println("[Game] fps=" + frames
-                    + " uptime=" + (System.nanoTime() - startNanos) / 1_000_000_000.0 + "s");
-            frames = 0;
-            fpsTimer = now;
+    // ------------------------------------------------------------------
+    // OptionsScreen (minimalna wersja GuiOptions 26.2)
+    // ------------------------------------------------------------------
+    private void drawOptions(float cx, int fbw, int fbh, float mx, float my, boolean clicked) {
+        String title = I18n.get("options.title");
+        font.draw(gui, title, cx - font.width(title, 2) / 2, 26, 2, 0xFFFFFFFF, true);
+
+        float bw = 400, bh = 40;
+        float bx = cx - bw / 2;
+        List<Button> buttons = new ArrayList<Button>();
+        Button lang = new Button(bx, 160, bw, bh);
+        lang.label = I18n.get("options.language") + "  "
+                + (I18n.isPl() ? "English" : "Polski");
+        buttons.add(lang);
+        Button sounds = new Button(bx, 212, bw, bh);
+        sounds.label = I18n.get("options.sounds");
+        sounds.enabled = false;
+        buttons.add(sounds);
+        Button video = new Button(bx, 264, bw, bh);
+        video.label = I18n.get("options.video");
+        video.enabled = false;
+        buttons.add(video);
+        Button done = new Button(bx, 420, bw, bh);
+        done.label = I18n.get("gui.done");
+        buttons.add(done);
+
+        drawButtons(buttons, mx, my);
+        if (clicked) {
+            if (lang.hover(mx, my)) toggleLanguage();
+            else if (done.hover(mx, my)) screen = Screen.TITLE;
         }
+    }
+
+    private void drawButtons(List<Button> buttons, float mx, float my) {
+        for (Button b : buttons) b.draw(gui, font, b.hover(mx, my));
+    }
+
+    private void toggleLanguage() {
+        I18n.setLang(I18n.isPl() ? I18n.Lang.EN : I18n.Lang.PL);
     }
 
     public void dispose() {

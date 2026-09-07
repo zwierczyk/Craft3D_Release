@@ -15,20 +15,20 @@ fi
 
 [ -d out/classes ] || ./build.sh >/dev/null
 
-# ekstrakcja assetow (jesli potrzeba) - czysty Java, bez unzip
 "$JAVA_BIN" -cp "out/classes:lib/*" craft3dmodern.test.AssetsExtractor
 
 mkdir -p out/testclasses
+find src -path "*test/*.java" > out/test-sources.txt
+
 if command -v javac >/dev/null 2>&1; then
-    javac -encoding UTF-8 -cp "out/classes" -d out/testclasses \
-        src/craft3dmodern/test/AssetsTest.java
+    javac -encoding UTF-8 -cp "out/classes" -d out/testclasses @out/test-sources.txt
 else
     if [ -f "$TC" ]; then source "$TC"; else
         echo "[test] brak javac i brak toolchaina"; exit 1
     fi
     "$JAVA" -cp "$ECJ" org.eclipse.jdt.internal.compiler.batch.Main \
-        -source 8 -target 8 -nowarn -cp "out/classes" -d out/testclasses \
-        src/craft3dmodern/test/AssetsTest.java
+        -source 8 -target 8 -nowarn -cp "out/classes" -d out/testclasses @out/test-sources.txt
 fi
 
 "$JAVA_BIN" -cp "out/classes:out/testclasses:lib/*" craft3dmodern.test.AssetsTest
+"$JAVA_BIN" -cp "out/classes:out/testclasses:lib/*" craft3dmodern.test.FontTest
