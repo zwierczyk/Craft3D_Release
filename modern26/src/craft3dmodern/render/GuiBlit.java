@@ -31,10 +31,7 @@ import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
 import static org.lwjgl.opengl.GL30.glBindVertexArray;
 import static org.lwjgl.opengl.GL30.glGenVertexArrays;
 
-/**
- * Rysowanie teksturowanych czworokatow GUI we wspolrzednych pikselowych.
- * Shader: uklad lewy-gorny (0,0), mnozenie przez uniform uTint (rgba).
- */
+
 public final class GuiBlit {
     private final int vao;
     private final int vbo;
@@ -92,7 +89,7 @@ public final class GuiBlit {
     public void begin() {
         program.use();
         ShaderProgram.uniform2f(program, "uScreen", screenW, screenH);
-        // GUI = blending, bez glebi i cullingu
+        
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
         glEnable(GL_BLEND);
@@ -112,7 +109,7 @@ public final class GuiBlit {
         drawTinted(textureId, x, y, w, h, u0, v0, u1, v1, 1f, 1f, 1f, 1f);
     }
 
-    /** Kolor prostokata (bez tekstury). */
+    
     public void rect(float x, float y, float w, float h, float r, float g, float b, float a) {
         if (w <= 0 || h <= 0) return;
         drawTinted(whiteTexture, x, y, w, h, 0, 0, 1, 1, r, g, b, a);

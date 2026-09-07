@@ -11,7 +11,7 @@ import org.lwjgl.BufferUtils;
 
 import static org.lwjgl.opengl.GL20.*;
 
-/** Kompilacja shaderow (GLSL 330 core) + obsluga uniformow. */
+
 public final class ShaderProgram {
     private final int program;
 
@@ -83,7 +83,7 @@ public final class ShaderProgram {
         glUniformMatrix4fv(uniform(name), false, mat);
     }
 
-    /** Ustaw uniform vec2 (dla zewnetrznych klas nie trzymajacych instancji). */
+    
     public static void uniform2f(ShaderProgram program, String name, float x, float y) {
         glUniform2f(program.uniform(name), x, y);
     }

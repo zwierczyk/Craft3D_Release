@@ -11,11 +11,7 @@ import java.util.zip.ZipFile;
 
 import craft3dmodern.render.Texture;
 
-/**
- * Rozpakowuje assety vanilla 26.2 (assets/minecraft-26.2.zip) do assets/minecraft,
- * jesli jeszcze nie istnieja. Dzieki temu repo nie musi trzymac ~11k plikow.
- * Uruchamiane przez build/test/run.
- */
+
 public final class AssetsExtractor {
     public static void main(String[] args) throws IOException {
         File assetRoot = Texture.assetRoot();

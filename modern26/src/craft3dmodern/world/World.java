@@ -1,9 +1,6 @@
 package craft3dmodern.world;
 
-/**
- * Siatka blokow o stalych wymiarach. Id blokow wg {@link BlockIds}.
- * index = (y * SZ + z) * SX + x.
- */
+
 public final class World {
     public final int sx, sy, sz;
     private final int[] blocks;
@@ -32,7 +29,7 @@ public final class World {
         if (inBounds(x, y, z)) blocks[index(x, y, z)] = id;
     }
 
-    /** Najwyzszy nie-powietrzny blok w kolumnie (-1 = pusta). */
+    
     public int topSolid(int x, int z) {
         for (int y = sy - 1; y >= 0; y--) {
             if (get(x, y, z) != BlockIds.AIR) return y;

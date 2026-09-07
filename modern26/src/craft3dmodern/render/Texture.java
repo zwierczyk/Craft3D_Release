@@ -25,24 +25,21 @@ import static org.lwjgl.opengl.GL11.glGenTextures;
 import static org.lwjgl.opengl.GL11.glTexImage2D;
 import static org.lwjgl.opengl.GL11.glTexParameteri;
 
-/**
- * Wczytywanie tekstur vanilla. Decode (czysty Java/ImageIO) dziala tez w
- * testach headless; upload wymaga kontekstu OpenGL.
- */
+
 public final class Texture {
     private Texture() {}
 
-    /** Root assets (domyslnie: modern26/assets; wykrywane tez z katalogu repo). */
+    
     public static File assetRoot() {
         String custom = System.getProperty("craft3dmodern.assets");
         if (custom != null) return new File(custom);
         File cwd = new File(System.getProperty("user.dir", "."));
-        // 1) wprost: cwd/assets oraz cwd/modern26/assets
+        
         File[] direct = {new File(cwd, "assets"), new File(cwd, "modern26/assets")};
         for (File c : direct) {
             if (looksLikeModernAssets(c)) return c;
         }
-        // 2) szukaj w gore az do katalogu repo (IntelliJ moze stac w podfolderze)
+        
         File p = cwd;
         for (int i = 0; i < 8 && p != null; i++) {
             File c = new File(p, "modern26/assets");
@@ -59,7 +56,7 @@ public final class Texture {
                 || new File(dir, "minecraft/version.json").isFile();
     }
 
-    /** Dekoduje plik PNG/JPEG do BufferedImage (bez kontekstu GL). */
+    
     public static BufferedImage decode(String assetPath) throws IOException {
         File file = new File(assetRoot(), assetPath);
         if (!file.isFile()) throw new IOException("asset not found: " + assetPath);
@@ -68,7 +65,7 @@ public final class Texture {
         return img;
     }
 
-    /** Konwertuje ARGB -> RGBA i wgrywa do nowej tekstury GL. */
+    
     public static int upload(BufferedImage image, boolean linear) {
         int w = image.getWidth(), h = image.getHeight();
         ByteBuffer pixels = BufferUtils.createByteBuffer(w * h * 4);
@@ -92,7 +89,7 @@ public final class Texture {
         return tex;
     }
 
-    /** Wczytaj i wgryj w jednym kroku. */
+    
     public static int load(String assetPath, boolean linear) throws IOException {
         return upload(decode(assetPath), linear);
     }

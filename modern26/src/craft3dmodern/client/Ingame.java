@@ -18,10 +18,7 @@ import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
 import static org.lwjgl.opengl.GL11.glDisable;
 import static org.lwjgl.opengl.GL11.glEnable;
 
-/**
- * Widok w swiecie (M3): generowanie swiata, atlas, mesh i latanie kamera
- * (WASD + mysz, Space = gora, C = dol, Shift = sprint, R = nowy swiat).
- */
+
 public final class Ingame {
     public long seed;
 
@@ -32,7 +29,7 @@ public final class Ingame {
     private WorldRender render;
     private int atlasTex = -1;
 
-    // kamera (yaw/pitch w radianach)
+    
     private double ex, ey, ez;
     private float yaw = (float) Math.toRadians(-35.0);
     private float pitch = (float) Math.toRadians(-6.0);
@@ -62,7 +59,7 @@ public final class Ingame {
         ey = world.topSolid(gx, gz) + 2.0;
     }
 
-    /** Inicjalizacja GL (program, VBO, tekstura atlasu). Kontekst GL musi byc aktywny. */
+    
     public void glInit() {
         render = new WorldRender();
         render.upload(mesh);
@@ -76,15 +73,10 @@ public final class Ingame {
         glInit();
     }
 
-    public boolean wantsCursorCaptured() {
-        return true;
-    }
-
-    /** Aktualizuje kamere na podstawie wejscia. */
     public void update(Input in, double dt) {
         float sens = 0.0024f;
         yaw -= in.mouseDx * sens;
-        pitch += in.mouseDy * sens;
+        pitch -= in.mouseDy * sens;
         if (pitch > (float) Math.toRadians(89)) pitch = (float) Math.toRadians(89);
         if (pitch < (float) Math.toRadians(-89)) pitch = (float) Math.toRadians(-89);
 
@@ -93,8 +85,8 @@ public final class Ingame {
         double fy = Math.sin(pitch);
         double fz = -Math.cos(yaw) * cp;
         double fxl = Math.sqrt(fx * fx + fz * fz);
-        double ux = fx / fxl, uz = fz / fxl; // forward w poziomie
-        double rx = -uz, rz = ux;            // prawo (obrot o -90 wokol Y)
+        double ux = fx / fxl, uz = fz / fxl; 
+        double rx = -uz, rz = ux;            
 
         double speed = 9.0;
         if (in.sprint) speed *= 2.4;
@@ -112,9 +104,9 @@ public final class Ingame {
         ez += moveZ * speed * dt;
     }
 
-    /** Rysuje swiat; zwraca true gdy jakikolwiek blok widoczny. */
+    
     public void draw(float aspect) {
-        // niebo
+        
         org.lwjgl.opengl.GL11.glClearColor(0.53f, 0.79f, 0.94f, 1f);
         org.lwjgl.opengl.GL11.glClear(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT | org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT);
         if (render == null || atlasTex < 0) return;

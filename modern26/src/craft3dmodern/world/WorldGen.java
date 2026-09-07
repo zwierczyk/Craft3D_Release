@@ -2,11 +2,7 @@ package craft3dmodern.world;
 
 import java.util.Random;
 
-/**
- * Generowanie swiata demonstracyjnego M3: teren z wartosciowego szumu,
- * trawa/ziemia/kamien, plaze z piasku, drzewa (debowe: pien + korona lisci)
- * i glazy z cobblestone.
- */
+
 public final class WorldGen {
     public static final int SX = 64;
     public static final int SZ = 64;
@@ -23,7 +19,7 @@ public final class WorldGen {
                         + valueNoise(x * 0.045, z * 0.045, seed) * 4.5
                         + valueNoise(x * 0.12 + 37.7, z * 0.12 + 9.3, seed) * 2.2
                         + valueNoise(x * 0.26 + 11.1, z * 0.26 + 73.5, seed) * 1.0;
-                // plaska polana w centrum (spawn)
+                
                 double dx = x - SX / 2.0;
                 double dz = z - SZ / 2.0;
                 double d = Math.sqrt(dx * dx + dz * dz);
@@ -87,20 +83,20 @@ public final class WorldGen {
         for (int y = ground + 1; y <= topLog; y++) {
             w.set(x, y, z, BlockIds.OAK_LOG);
         }
-        // korona lisci: wokol i ponad wierzcholkiem pnia
+        
         for (int ly = 0; ly < 3; ly++) {
             int y = topLog + ly;
             int r = ly == 0 ? 1 : (ly == 1 ? 2 : 1);
             for (int dx = -r; dx <= r; dx++) {
                 for (int dz = -r; dz <= r; dz++) {
                     if (dx == 0 && dz == 0) {
-                        // nad pniem (nie nadpisujemy ostatniego kloca)
+                        
                         if (ly >= 1 && w.get(x, y, z) == BlockIds.AIR) {
                             w.set(x, y, z, BlockIds.OAK_LEAVES);
                         }
                         continue;
                     }
-                    // losowo przycinamy narozniki, korona nie musi byc idealnym prostopadloscianem
+                    
                     if (Math.abs(dx) == r && Math.abs(dz) == r && rnd.nextInt(3) == 0) continue;
                     if (w.get(x + dx, y, z + dz) == BlockIds.AIR) {
                         w.set(x + dx, y, z + dz, BlockIds.OAK_LEAVES);
@@ -110,15 +106,15 @@ public final class WorldGen {
         }
     }
 
-    // ------------------------------------------------------------------
-    // wartosciowy szum
-    // ------------------------------------------------------------------
+    
+    
+    
 
     private static double hash2(int x, int z, long seed) {
         long h = x * 374761393L + z * 668265263L + seed * 974634307L;
         h = (h ^ (h >>> 13)) * 1274126177L;
         h ^= h >>> 16;
-        return ((h & 0x7fffffffL) / (double) 0x40000000L) - 1.0; // -1..1
+        return ((h & 0x7fffffffL) / (double) 0x40000000L) - 1.0; 
     }
 
     private static double valueNoise(double x, double z, long seed) {

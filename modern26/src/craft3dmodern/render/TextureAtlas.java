@@ -8,20 +8,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Skleja tekstury blokow w jeden atlas (bez GL - czysty BufferedImage),
- * co pozwala testowac go headless.
- */
+
 public final class TextureAtlas {
     public static final int PAGE = 512;
-    /** dodatkowy przezroczysty piksel wokol kazdego kafelka (na mipmapy w przyszlosci) */
+    
     public static final int PAD = 1;
 
     public static final class Entry {
-        public final String tex;      // "block/stone"
-        public final int x, y, w, h;  // polozenie kafelka na stronie
-        public final boolean gray;    // tekstura szara (wymaga tintu)
-        public final int tileW;       // rozmiar w pikselach (0..w)
+        public final String tex;      
+        public final int x, y, w, h;  
+        public final boolean gray;    
+        public final int tileW;       
         Entry(String tex, int x, int y, int w, int h, boolean gray) {
             this.tex = tex;
             this.x = x;

@@ -8,11 +8,7 @@ import java.util.Map;
 import craft3dmodern.render.Texture;
 import craft3dmodern.util.Json;
 
-/**
- * Tlumaczenia: en_us.json ladujemy z prawdziwych assetow 26.2; poniewaz
- * klient zawiera tylko en_us, polskie napisy dla uzywanych kluczy trzymamy
- * lokalnie (jak w starszych wersjach MC z pl_PL.lang).
- */
+
 public final class I18n {
     public enum Lang { EN, PL }
 
@@ -31,7 +27,7 @@ public final class I18n {
                 if (e.getValue() instanceof String) EN.put(e.getKey(), (String) e.getValue());
             }
         }
-        // Polski - recznie, dla kluczy ktore wyswietlamy (odpowiedniki pl_PL).
+        
         putPl("menu.singleplayer", "Tryb jednoosobowy");
         putPl("menu.multiplayer", "Tryb wieloosobowy");
         putPl("menu.online", "Minecraft Realms");
@@ -81,7 +77,7 @@ public final class I18n {
         return current == Lang.PL;
     }
 
-    /** Tlumaczenie klucza (PL -> wlasna mapa z fallbackiem do en_us). */
+    
     public static String get(String key) {
         String v = current == Lang.PL ? PL.get(key) : null;
         if (v == null) v = EN.get(key);

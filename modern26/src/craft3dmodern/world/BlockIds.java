@@ -3,7 +3,7 @@ package craft3dmodern.world;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Prosty rejestr blokow (id nazw) uzywanych przez M3. */
+
 public final class BlockIds {
     public static final int AIR = 0;
     public static final int STONE = 1;
@@ -15,9 +15,9 @@ public final class BlockIds {
     public static final int OAK_LOG = 7;
     public static final int OAK_LEAVES = 8;
 
-    /** kolor tintu trawy (plains) */
+    
     public static final int TINT_GRASS = 0xFF91BD59;
-    /** kolor tintu lisci (foliage, plains) */
+    
     public static final int TINT_FOLIAGE = 0xFF6AA234;
 
     private static final String[] NAMES = {
@@ -49,12 +49,12 @@ public final class BlockIds {
         return NAMES[id];
     }
 
-    /** Kazdy nie-powietrzny blok zaslania sasiednie sciany (M3: brak transparentnych poza air). */
+    
     public static boolean occludes(int id) {
         return id != AIR;
     }
 
-    /** Tint bloku (0 = bialy / brak) wg nazwy bloku; tekstura szara dostaje kolor. */
+    
     public static int tintRgb(int id) {
         if (id < 0 || id >= NAMES.length) return 0xFFFFFF;
         int t = TINTS[id];

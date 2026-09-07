@@ -10,7 +10,7 @@ import java.util.List;
 
 import craft3dmodern.render.Texture;
 
-/** Headless sanity test: prawdziwe assety vanilla 26.2 dekoduja sie poprawnie. */
+
 public final class AssetsTest {
     private static final List<String> FAILS = new ArrayList<>();
 
@@ -40,7 +40,7 @@ public final class AssetsTest {
             }
         }
 
-        // Wszystkie PNG w gui sprites + gui title musza sie dekodowac.
+        
         int pngs = 0, decoded = 0;
         File root = new File(Texture.assetRoot(), "minecraft/textures/gui");
         if (root.isDirectory()) {
@@ -60,7 +60,7 @@ public final class AssetsTest {
         check(pngs > 50, "found gui png count " + pngs);
         check(decoded == pngs, "all gui pngs decode (" + decoded + "/" + pngs + ")");
 
-        // wersja + tlumaczenia
+        
         File version = new File(Texture.assetRoot(), "version.json");
         String vjson = new String(Files.readAllBytes(version.toPath()), StandardCharsets.UTF_8);
         check(vjson.contains("\"id\" : \"26.2\"") || vjson.contains("\"id\": \"26.2\"") || vjson.contains("26.2"),
@@ -72,7 +72,7 @@ public final class AssetsTest {
         check(en.contains("menu.singleplayer"), "en_us.json has menu.singleplayer");
         check(en.contains("options.sounds.title"), "en_us.json has options.sounds.title");
 
-        // modele
+        
         File model = new File(Texture.assetRoot(), "minecraft/models/block/grass_block.json");
         check(model.isFile(), "model grass_block.json exists");
         File rootVersion = new File(Texture.assetRoot(), "version.json");

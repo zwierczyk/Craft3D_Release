@@ -12,34 +12,25 @@ import java.util.Set;
 import craft3dmodern.render.Texture;
 import craft3dmodern.util.Json;
 
-/**
- * Ladowanie i "pieczenie" modeli blokow z prawdziwych plikow JSON 26.2
- * (models/block/*.json, blockstates/*.json). Algorytm wierny vanilla:
- * - parent chain z dziedziczeniem geometrii i mapy tekstur,
- * - zmienne tekstur "#nazwa" rozwiazywane od modelu w dol do przodkow,
- * - geometria quadow wg FaceInfo 26.2 (kolejnosc wierzcholkow i osie UV
- *   z CuboidFace: wierzcholki 0/1 -> minU, 2/3 -> maxU, 0/3 -> minV, 1/2 -> maxV).
- * Warianty blockstate'ow z obrotami x/y sa w M3 ignorowane (bierzemy pierwszy),
- * obrot UV wlasciwy dla pelnych szescianow (rotation 0/90/180/270).
- */
+
 public final class BlockModels {
     public static final int DOWN = 0, UP = 1, NORTH = 2, SOUTH = 3, WEST = 4, EAST = 5;
     public static final String[] DIR_NAMES = {"down", "up", "north", "south", "west", "east"};
 
-    /** Pojedynczy wypieczony quad w ukladzie modelu (jednostki 0..16). */
+    
     public static final class Face {
         public final float[] x = new float[4];
         public final float[] y = new float[4];
         public final float[] z = new float[4];
         public final float[] u = new float[4];
         public final float[] v = new float[4];
-        /** Kierunek normalnej (0..5). */
+        
         public final int dir;
-        /** Kierunek cullface (-1 = brak). */
+        
         public final int cullDir;
-        /** tintindex (0 = trawa/liscie, -1 = brak). */
+        
         public final int tintIndex;
-        /** Rozwiazana tekstura: "block/stone" lub null. */
+        
         public final String tex;
 
         Face(float[] xs, float[] ys, float[] zs, float[] us, float[] vs,
@@ -60,17 +51,17 @@ public final class BlockModels {
         public final List<Face> faces = new ArrayList<Face>();
     }
 
-    // dir, wierzcholek(0..3), os(x=0,y=1,z=2) -> 0 = from, 1 = to  (wg FaceInfo 26.2)
+    
     private static final int[][][] VI = {
-        {{0, 0, 1}, {0, 0, 0}, {1, 0, 0}, {1, 0, 1}}, // down
-        {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}}, // up
-        {{1, 1, 0}, {1, 0, 0}, {0, 0, 0}, {0, 1, 0}}, // north
-        {{0, 1, 1}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}}, // south
-        {{0, 1, 0}, {0, 0, 0}, {0, 0, 1}, {0, 1, 1}}, // west
-        {{1, 1, 1}, {1, 0, 1}, {1, 0, 0}, {1, 1, 0}}, // east
+        {{0, 0, 1}, {0, 0, 0}, {1, 0, 0}, {1, 0, 1}}, 
+        {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}}, 
+        {{1, 1, 0}, {1, 0, 0}, {0, 0, 0}, {0, 1, 0}}, 
+        {{0, 1, 1}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}}, 
+        {{0, 1, 0}, {0, 0, 0}, {0, 0, 1}, {0, 1, 1}}, 
+        {{1, 1, 1}, {1, 0, 1}, {1, 0, 0}, {1, 1, 0}}, 
     };
 
-    private final File assets; // katalog z katalogiem minecraft/ (czyli modern26/assets)
+    private final File assets; 
     private final Map<String, Map<String, Object>> rawCache = new HashMap<String, Map<String, Object>>();
     private final Map<String, List<Map<String, Object>>> chainCache = new HashMap<String, List<Map<String, Object>>>();
 
@@ -85,21 +76,21 @@ public final class BlockModels {
         this.assets = assetsRoot;
     }
 
-    // ------------------------------------------------------------------
-    // public API
-    // ------------------------------------------------------------------
+    
+    
+    
 
-    /** Model dla bloku wg pierwszego wariantu blockstate'u (brak obrotow x/y). */
+    
     public Model modelFor(String blockName) throws IOException {
         return bakeState(blockName, null);
     }
 
-    /** Model dla wariantu, np. modelFor("oak_log", "axis=y"). */
+    
     public Model modelFor(String blockName, String variant) throws IOException {
         return bakeState(blockName, variant);
     }
 
-    /** Unikalne tekstury uzywane przez podane modele blokow. */
+    
     public Set<String> texturesUsed(String... blockNames) throws IOException {
         Set<String> out = new HashSet<String>();
         for (String name : blockNames) {
@@ -110,9 +101,9 @@ public final class BlockModels {
         return out;
     }
 
-    // ------------------------------------------------------------------
-    // blockstate + bake
-    // ------------------------------------------------------------------
+    
+    
+    
 
     private Model bakeState(String blockName, String wantedVariant) throws IOException {
         File stateFile = new File(assets, "minecraft/blockstates/" + blockName + ".json");
@@ -149,7 +140,7 @@ public final class BlockModels {
         Model model = new Model();
         List<Map<String, Object>> chain = chain(normalizeModelName(vanillaName));
 
-        // geometria: najblizszy model w lancuchu ktory ma elements
+        
         Map<String, Object> owner = null;
         for (Map<String, Object> m : chain) {
             if (m.get("elements") instanceof List && !((List<?>) m.get("elements")).isEmpty()) {
@@ -158,7 +149,7 @@ public final class BlockModels {
             }
         }
         if (owner == null) {
-            // brak geometrii (np. tylko display) - pusty model jest OK
+            
             return model;
         }
         List<?> elements = (List<?>) owner.get("elements");
@@ -184,7 +175,7 @@ public final class BlockModels {
                     float[] uv = float4(fo.get("uv"));
                     if (uv != null) uvs = uv;
                 }
-                int rot = num(fo.get("rotation"), 0).intValue() / 90; // 0..3
+                int rot = num(fo.get("rotation"), 0).intValue() / 90; 
                 int cull = -1;
                 Object cullObj = fo.get("cullface");
                 if (cullObj instanceof String) cull = dirIndex((String) cullObj);
@@ -206,11 +197,11 @@ public final class BlockModels {
         return model;
     }
 
-    // ------------------------------------------------------------------
-    // raw model JSON, parent chain, tekstury
-    // ------------------------------------------------------------------
+    
+    
+    
 
-    /** "minecraft:block/stone" -> "block/stone" (nazwa pliku pod models/). */
+    
     private static String normalizeModelName(String vanillaName) {
         String s = vanillaName;
         if (s.startsWith("minecraft:")) s = s.substring("minecraft:".length());
@@ -227,7 +218,7 @@ public final class BlockModels {
         return o;
     }
 
-    /** Lancuch [self, parent, ...] (self pierwszy). */
+    
     private List<Map<String, Object>> chain(String fileBase) throws IOException {
         List<Map<String, Object>> cached = chainCache.get(fileBase);
         if (cached != null) return cached;
@@ -271,14 +262,14 @@ public final class BlockModels {
     private static String normalizeTex(String v) {
         String s = v;
         if (s.startsWith("minecraft:")) s = s.substring("minecraft:".length());
-        if (s.indexOf(':') >= 0) return null; // inny namespace: pomin (M3)
+        if (s.indexOf(':') >= 0) return null; 
         if (!s.startsWith("block/")) return null;
         return s;
     }
 
-    // ------------------------------------------------------------------
-    // drobne pomocniki
-    // ------------------------------------------------------------------
+    
+    
+    
 
     private static int dirIndex(String name) {
         for (int i = 0; i < DIR_NAMES.length; i++) {

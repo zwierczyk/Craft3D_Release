@@ -11,10 +11,7 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
-/**
- * Render swiata 3D: shader + VBO z meshem i atlasem tekstur.
- * Oczekuje aktywnego kontekstu GL 3.3 core.
- */
+
 public final class WorldRender {
     private final ShaderProgram program;
     private final int vao;
@@ -43,7 +40,7 @@ public final class WorldRender {
                 "out vec4 fragColor;\n" +
                 "void main() {\n" +
                 "  vec4 c = texture(uTex, vUv);\n" +
-                "  if (c.a < 0.15) discard;\n" + // cutout (liscie, overlay trawy)
+                "  if (c.a < 0.15) discard;\n" + 
                 "  fragColor = vec4(c.rgb * vColor, 1.0);\n" +
                 "}\n";
         program = ShaderProgram.create(vs, fs);
@@ -65,7 +62,7 @@ public final class WorldRender {
         GL30.glBindVertexArray(0);
     }
 
-    /** Format wierzcholka meshu swiata (8 floatow). */
+    
     public static final class MeshVertex {
         public static final int FLOATS = 8;
         private MeshVertex() {}
@@ -85,7 +82,7 @@ public final class WorldRender {
         return vertexCount;
     }
 
-    /** Rysuje mesh (wymaga uMvp kolumnowego, aktywnej tekstury na unit 0). */
+    
     public void render(java.nio.FloatBuffer mvpColMajor) {
         program.use();
         program.uniformMat4("uMvp", mvpColMajor);

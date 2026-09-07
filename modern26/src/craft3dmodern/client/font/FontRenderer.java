@@ -14,32 +14,25 @@ import craft3dmodern.render.GuiBlit;
 import craft3dmodern.render.Texture;
 import craft3dmodern.util.Json;
 
-/**
- * Font 26.2 z prawdziwych assetow (minecraft/font/default.json i jego
- * bitmap-providerow). Layout glifow wiernie wg BitmapProvider z 26.2:
- *  - cols = dlugosc PIERWSZEGO wiersza "chars", glyphWidth = imgW/cols
- *  - rows = liczba wierszy, glyphHeight = imgH/rows
- *  - szerokosc advance przycinana do nieprzezroczystego piksela (+1)
- * Wczytywanie metryk nie wymaga GL; tekstury sa wgrywane przez upload().
- */
+
 public final class FontRenderer {
-    /** Glif: cwiartka UV w tekturze zrodlowej + wymiary w jednostkach projektu. */
+    
     public static final class Glyph {
-        String texPath;
-        float u0, v0, u1, v1;
-        float w, h;      // wymiary w px projektu (design)
-        float adv;       // szerokosc + 1 (design)
+        public String texPath;
+        public float u0, v0, u1, v1;
+        public float w, h;
+        public float adv;
     }
 
     private final Map<Character, Glyph> glyphs = new HashMap<Character, Glyph>();
     private final Map<String, Integer> textures = new HashMap<String, Integer>();
-    private final int height; // projektowa wysokosc fontu (zwykle 8)
+    private final int height; 
 
     private FontRenderer(int height) {
         this.height = height;
     }
 
-    /** Wczytuje font (metadane + dekodowanie PNG, bez GL). */
+    
     public static FontRenderer load() throws IOException {
         File asset = Texture.assetRoot();
         File fontDir = new File(new File(new File(asset, "minecraft"), "font"), "default.json");
@@ -47,7 +40,7 @@ public final class FontRenderer {
         Object root = Json.parseFile(fontDir.toPath());
         List<Object> providers = Json.asList(Json.asObject(root).get("providers"));
 
-        // Font 26.2 uzywa "height" 8 (jak reszta GUI), patrz BitmapProvider.Definition.
+        
         FontRenderer fr = new FontRenderer(8);
         Set<String> resolving = new LinkedHashSet<String>();
         fr.collect(fontDir, providers, resolving, 0);
@@ -81,17 +74,17 @@ public final class FontRenderer {
                     Glyph g = glyphs.get(c);
                     if (g == null) g = new Glyph();
                     g.adv = ((Number) e.getValue()).floatValue();
-                    g.texPath = null; // bialy znak (spacja) - tylko przesuniecie
+                    g.texPath = null; 
                     g.w = g.h = 0;
                     glyphs.put(c, g);
                 }
             }
-            // ttf/unifont - pomijamy (default.json 26.2 nie zawiera ttf)
+            
         }
     }
 
     private File resolveFontRef(File fallbackDir, String id) {
-        // id typu "minecraft:include/space" -> font/include/space.json
+        
         String path = id;
         if (path.startsWith("minecraft:")) path = path.substring("minecraft:".length());
         if (!path.endsWith(".json")) path = path + ".json";
@@ -101,7 +94,7 @@ public final class FontRenderer {
 
     @SuppressWarnings("unchecked")
     private void readBitmapProvider(Map<String, Object> p) throws IOException {
-        String file = (String) p.get("file"); // np. minecraft:font/ascii.png
+        String file = (String) p.get("file"); 
         if (file == null) return;
         List<Object> rowsObj = Json.asList(p.get("chars"));
         int paramHeight = p.containsKey("height") ? ((Number) p.get("height")).intValue() : 8;
@@ -140,7 +133,7 @@ public final class FontRenderer {
             String line = rows.get(r);
             for (int c = 0; c < line.length() && c < cols; c++) {
                 char ch = line.charAt(c);
-                if (ch == 0 || glyphs.containsKey(ch)) continue; // first provider wins (jak FontSet 26.2)
+                if (ch == 0 || glyphs.containsKey(ch)) continue; 
                 int actualW = actualGlyphWidth(img, gw, gh, c, r);
                 Glyph g = new Glyph();
                 g.texPath = asset;
@@ -151,7 +144,7 @@ public final class FontRenderer {
                 g.w = gw * pixelScale;
                 g.h = gh * pixelScale;
                 g.adv = (int) (0.5 + actualW * pixelScale) + 1;
-                // wazne: "height" parametr = projektowa wysokosc fontu (8), a ascent = 7
+                
                 glyphs.put(ch, g);
             }
         }
@@ -159,13 +152,13 @@ public final class FontRenderer {
 
     private static String toTextureAsset(String fileId) {
         String p = fileId;
-        if (p.startsWith("minecraft:")) p = p.substring("minecraft:".length()); // font/ascii.png
+        if (p.startsWith("minecraft:")) p = p.substring("minecraft:".length()); 
         if (p.startsWith("textures/")) p = p.substring("textures/".length());
         if (!p.startsWith("font/") && !p.startsWith("textures/")) p = "font/" + p;
         return "minecraft/textures/" + p;
     }
 
-    /** Szerokosc uzytego obszaru glifu: od prawej do pierwszej nieprzezroczystej kolumny. */
+    
     private static int actualGlyphWidth(BufferedImage img, int gw, int gh, int gx, int gy) {
         for (int w = gw - 1; w >= 0; w--) {
             int px = gx * gw + w;
@@ -178,7 +171,7 @@ public final class FontRenderer {
         return 0;
     }
 
-    /** Po utworzeniu kontekstu GL: wgrywa tekstury providerow. */
+    
     public void upload() throws IOException {
         Map<String, Integer> ids = new HashMap<String, Integer>();
         for (Glyph g : glyphs.values()) {
@@ -199,7 +192,7 @@ public final class FontRenderer {
         return height;
     }
 
-    /** Szerokosc tekstu w px (design), mnozona pozniej przez skale. */
+    
     public float width(String s) {
         float w = 0;
         for (int i = 0; i < s.length(); i++) {
@@ -217,7 +210,11 @@ public final class FontRenderer {
         return glyphs.containsKey(c);
     }
 
-    /** Rysuje tekst; y = gorna krawedz linii (w px), scale mnozy wymiary. */
+    public Glyph glyph(char c) {
+        return glyphs.get(c);
+    }
+
+    
     public void draw(GuiBlit g, String s, float x, float y, float scale, int argb, boolean shadow) {
         float a = ((argb >>> 24) & 255) / 255f;
         if (shadow) {

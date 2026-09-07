@@ -4,11 +4,7 @@ import java.nio.FloatBuffer;
 
 import org.lwjgl.BufferUtils;
 
-/**
- * Miniaturowa matematyka macierzy 4x4. Macierze trzymamy w ukladzie
- * wierszowym float[16] (r*4+c) i mnozymy jako M = A*B (wektory kolumnowe).
- * Do GL wysylamy wersje kolumnowa (glUniformMatrix4fv, transpose=false).
- */
+
 public final class Mat4 {
     private Mat4() {}
 
@@ -30,7 +26,7 @@ public final class Mat4 {
         return c;
     }
 
-    /** Projekcja perspektywiczna (GL: kamera patrzy w -z, zNear>0). */
+    
     public static float[] perspective(float fovyDeg, float aspect, float near, float far) {
         float f = (float) (1.0 / Math.tan(Math.toRadians(fovyDeg) / 2.0));
         float[] out = new float[16];
@@ -42,20 +38,20 @@ public final class Mat4 {
         return out;
     }
 
-    /** lookAt (prawoskrętne; patrzy w -z w przestrzeni widoku). */
+    
     public static float[] lookAt(float ex, float ey, float ez,
                                  float cx, float cy, float cz,
                                  float ux, float uy, float uz) {
         float fx = cx - ex, fy = cy - ey, fz = cz - ez;
         float fl = (float) Math.sqrt(fx * fx + fy * fy + fz * fz);
         fx /= fl; fy /= fl; fz /= fl;
-        // s = normalize(f x up)
+        
         float sx = fy * uz - fz * uy;
         float sy = fz * ux - fx * uz;
         float sz = fx * uy - fy * ux;
         float sl = (float) Math.sqrt(sx * sx + sy * sy + sz * sz);
         sx /= sl; sy /= sl; sz /= sl;
-        // u = s x f
+        
         float uxx = sy * fz - sz * fy;
         float uyy = sz * fx - sx * fz;
         float uzz = sx * fy - sy * fx;
@@ -68,7 +64,7 @@ public final class Mat4 {
         return out;
     }
 
-    /** Zamiana wierszowej na kolumnowa (kolejnosc dla glUniformMatrix4fv). */
+    
     public static FloatBuffer columnMajor(float[] rowMajor) {
         FloatBuffer b = BufferUtils.createFloatBuffer(16);
         for (int c = 0; c < 4; c++) {

@@ -15,7 +15,7 @@ import craft3dmodern.world.MeshBuilder;
 import craft3dmodern.world.World;
 import craft3dmodern.world.WorldGen;
 
-/** Headless test M3: modele 26.2, atlas, meshing (czysta Java, bez GL). */
+
 public final class WorldTest {
     private static final List<String> FAILS = new ArrayList<String>();
 
@@ -27,7 +27,7 @@ public final class WorldTest {
     public static void main(String[] args) throws Exception {
         BlockModels bm = new BlockModels();
 
-        // -- modele z prawdziwych JSON-ow 26.2
+        
         BlockModels.Model stone = bm.modelFor("stone");
         check(!stone.faces.isEmpty() && stone.faces.size() <= 6, "stone: pelny szescian (6 scian), faktycznie " + stone.faces.size());
         check(stone.faces.size() == 6, "stone: dokladnie 6 scian");
@@ -53,7 +53,7 @@ public final class WorldTest {
         BlockModels.Model leavesModel = bm.modelFor("oak_leaves");
         check(!leavesModel.faces.isEmpty(), "oak_leaves ma sciany");
 
-        // kazda tekstura modeli istnieje jako plik
+        
         Set<String> texSet = new LinkedHashSet<String>();
         for (int id = 1; id < BlockIds.count(); id++) {
             String name = BlockIds.name(id);
@@ -68,7 +68,7 @@ public final class WorldTest {
             check(png.isFile(), "tekstura " + t + ".png istnieje");
         }
 
-        // -- atlas
+        
         TextureAtlas at = TextureAtlas.build(texSet);
         check(at.count() == texSet.size(), "atlas zawiera wszystkie " + texSet.size() + " tekstury");
         check(at.entry("block/stone") != null, "atlas ma stone");
@@ -77,21 +77,21 @@ public final class WorldTest {
         check(at.entry("block/oak_leaves").gray, "liscie sa szare (tint)");
         check(at.entry("block/stone").x >= 0 && at.page().getWidth() == TextureAtlas.PAGE, "strona atlasu 512x512");
 
-        // -- meshing pojedynczego bloku (6 scian)
+        
         World one = new World(3, 3, 3);
         one.set(1, 1, 1, BlockIds.STONE);
         float[] meshOne = MeshBuilder.build(one, bm, at);
         check(meshOne.length == 6 * 6 * MeshBuilder.FLOATS_PER_VERTEX,
                 "1 blok = 6 scian x 2 trojkaty (" + meshOne.length + " floatow)");
 
-        // pelnia 3x3x3: tylko zewnetrzna skorupa (54 sciany = 6x9), zero scian wewnatrz
+        
         World cube = new World(3, 3, 3);
         for (int x = 0; x < 3; x++) for (int y = 0; y < 3; y++) for (int z = 0; z < 3; z++) cube.set(x, y, z, BlockIds.STONE);
         float[] meshCube = MeshBuilder.build(cube, bm, at);
         check(meshCube.length == 54 * 6 * MeshBuilder.FLOATS_PER_VERTEX,
                 "pelnia 3x3x3: tylko skorupa (54 sciany), wewnetrzne wycullowane");
 
-        // plateau 5x5 o wysokosci 5: gora+dol (50) + zewnetrzne boki (100) = 150 scian
+        
         World plat = new World(5, 6, 5);
         for (int x = 0; x < 5; x++) {
             for (int z = 0; z < 5; z++) {
@@ -102,7 +102,7 @@ public final class WorldTest {
         check(meshPlat.length == 150 * 6 * MeshBuilder.FLOATS_PER_VERTEX,
                 "plateau 5x5x5: gora+dol+boki zewnetrzne (150 scian), wnetrze wycullowane");
 
-        // -- swiat generowany
+        
         World w = WorldGen.generate(12345L);
         int nonAir = 0;
         int topMin = 999, topMax = -1;
@@ -140,13 +140,13 @@ public final class WorldTest {
         }
         check(sandSeen, "plaza z piasku istnieje (SAND)");
 
-        // mesh swiata
+        
         float[] mesh = MeshBuilder.build(w, bm, at);
         long faces = mesh.length / (long) (6 * MeshBuilder.FLOATS_PER_VERTEX);
         check(mesh.length > 0 && faces > 2000, "mesh swiata: " + faces + " scian (>2000)");
         check(mesh.length % (6 * MeshBuilder.FLOATS_PER_VERTEX) == 0, "mesh jest wielokrotnoscia sciany");
 
-        // wspolrzedne w granicach swiata, uv w [0,1], kolory w [0,1]
+        
         boolean bad = false;
         boolean tintedSeen = false;
         for (int i = 0; i < mesh.length; i += MeshBuilder.FLOATS_PER_VERTEX) {

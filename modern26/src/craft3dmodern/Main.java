@@ -16,14 +16,12 @@ import static org.lwjgl.opengl.GL11.GL_RENDERER;
 import static org.lwjgl.opengl.GL11.GL_VENDOR;
 import static org.lwjgl.opengl.GL11.GL_VERSION;
 
-/**
- * Craft3D Modern - startowa aplikacja (OpenGL 3.3 core + shadery).
- */
+
 public final class Main {
     private Main() {}
 
     public static void main(String[] args) {
-        // Assety 26.2: rozpakuj jesli potrzeba (dziala tez z IntelliJ, bez build.bat).
+        
         try {
             craft3dmodern.test.AssetsExtractor.main(new String[0]);
         } catch (Throwable t) {
@@ -116,7 +114,7 @@ public final class Main {
             boolean quit = game.render(dt, fbw, fbh, in);
             if (quit) glfwSetWindowShouldClose(window, true);
 
-            // przechwycenie kursora wg stanu gry (po renderze, bo render moze zmienic pauze)
+            
             int want = game.wantsCursorCaptured() ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
             if (glfwGetInputMode(window, GLFW_CURSOR) != want) {
                 glfwSetInputMode(window, GLFW_CURSOR, want);

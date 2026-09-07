@@ -9,10 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Minimalny, samowystarczalny parser JSON (bez zewnetrznych bibliotek).
- * Wynik: Map<String,Object>, List<Object>, String, Double, Boolean lub null.
- */
+
 public final class Json {
     private final String s;
     private int pos;
@@ -68,7 +65,7 @@ public final class Json {
 
     private Map<String, Object> object() {
         Map<String, Object> m = new LinkedHashMap<String, Object>();
-        pos++; // {
+        pos++; 
         ws();
         if (pos < s.length() && s.charAt(pos) == '}') { pos++; return m; }
         while (true) {
@@ -89,7 +86,7 @@ public final class Json {
 
     private List<Object> array() {
         List<Object> l = new ArrayList<Object>();
-        pos++; // [
+        pos++; 
         ws();
         if (pos < s.length() && s.charAt(pos) == ']') { pos++; return l; }
         while (true) {

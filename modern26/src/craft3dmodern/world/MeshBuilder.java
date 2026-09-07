@@ -7,13 +7,7 @@ import java.util.Map;
 import craft3dmodern.model.BlockModels;
 import craft3dmodern.render.TextureAtlas;
 
-/**
- * Buduje mesh swiata: dla kazdego bloku wypieka sciany modeli 26.2,
- * culling do sasiadow (sciana tylko przy powietrzu), cieniowanie stron
- * (jak vanilla: dol 0.5, gora 1.0, N/S 0.8, W/E 0.6), tint trawy/lisci
- * dla szarych tekstur z tintindex.
- * Vertex: x,y,z,u,v,r,g,b (8 floatow).
- */
+
 public final class MeshBuilder {
     public static final int FLOATS_PER_VERTEX = 8;
     private static final float[] SHADE = {0.50f, 1.00f, 0.80f, 0.80f, 0.60f, 0.60f};
@@ -31,7 +25,7 @@ public final class MeshBuilder {
             models.put(id, bm.modelFor(name, variant));
         }
 
-        // 1) policz widoczne sciany
+        
         long faceCount = 0;
         for (int y = 0; y < w.sy; y++) {
             for (int z = 0; z < w.sz; z++) {
@@ -53,7 +47,7 @@ public final class MeshBuilder {
         float[] out = new float[(int) (faceCount * 6 * FLOATS_PER_VERTEX)];
         int p = 0;
 
-        // 2) wypelnij
+        
         for (int y = 0; y < w.sy; y++) {
             for (int z = 0; z < w.sz; z++) {
                 for (int x = 0; x < w.sx; x++) {
@@ -85,7 +79,7 @@ public final class MeshBuilder {
                             us[i] = (e.x + lu) / TextureAtlas.PAGE;
                             vs[i] = (e.y + lv) / TextureAtlas.PAGE;
                         }
-                        // dwa trojkaty: 0,1,2 i 0,2,3
+                        
                         int[] order = {0, 1, 2, 0, 2, 3};
                         for (int oi = 0; oi < order.length; oi++) {
                             int vi = order[oi];

@@ -8,12 +8,8 @@ import java.util.Map;
 import craft3dmodern.client.font.FontRenderer;
 import craft3dmodern.render.GuiBlit;
 import craft3dmodern.render.Texture;
+import craft3dmodern.util.Json;
 
-/**
- * Przycisk w stylu 26.2: sprite widgets/button*.png rysowany nine-slice
- * (mcmeta: nine_slice border 3 na teksturze 200x20). Hover uzywa
- * button_highlighted.png, disabled -> button_disabled.png.
- */
 public final class Button {
     public static final int SRC_W = 200;
     public static final int SRC_H = 20;
@@ -31,15 +27,14 @@ public final class Button {
         sp = new Sprite();
         try {
             String path = "minecraft/textures/gui/sprites/widget/" + name + ".png";
-            File f = new File(Texture.assetRoot(), path);
-            BufferedImage img = javax.imageio.ImageIO.read(f);
+            BufferedImage img = javax.imageio.ImageIO.read(new File(Texture.assetRoot(), path));
             if (img != null) sp.tex = Texture.upload(img, false);
             File meta = new File(Texture.assetRoot(), path + ".mcmeta");
             if (meta.isFile()) {
-                Object root = craft3dmodern.util.Json.parseFile(meta.toPath());
-                Object gui = craft3dmodern.util.Json.asObject(root).get("gui");
-                Object scaling = craft3dmodern.util.Json.asObject(gui).get("scaling");
-                Object border = craft3dmodern.util.Json.asObject(scaling).get("border");
+                Object root = Json.parseFile(meta.toPath());
+                Object gui = Json.asObject(root).get("gui");
+                Object scaling = Json.asObject(gui).get("scaling");
+                Object border = Json.asObject(scaling).get("border");
                 if (border instanceof Number) sp.border = ((Number) border).intValue();
             }
         } catch (Throwable t) {
@@ -64,35 +59,33 @@ public final class Button {
         return enabled && mx >= x && mx <= x + w && my >= y && my <= y + h;
     }
 
-    public void draw(GuiBlit g, FontRenderer font, boolean mouseOver) {
+    public void draw(GuiBlit g, FontRenderer font, boolean mouseOver, float s) {
         String spriteName = !enabled ? "button_disabled"
                 : (mouseOver ? "button_highlighted" : "button");
         Sprite sp = sprite(spriteName);
-        int tex = sp.tex;
-        if (tex <= 0) {
-            g.rect(x, y, w, h, 0.3f, 0.3f, 0.3f, 1f);
+        float px = x * s;
+        float py = y * s;
+        float pw = w * s;
+        float ph = h * s;
+        if (sp.tex <= 0) {
+            g.rect(px, py, pw, ph, 0.3f, 0.3f, 0.3f, 1f);
         } else {
-            float f = Math.max(0.0001f, h / SRC_H);
-            drawNine(g, tex, sp.border, f, x, y, w, h);
+            drawNine(g, sp.tex, sp.border, pw / SRC_W, px, py, pw, ph);
         }
-        int color = !enabled ? 0xA0A0A0 : (mouseOver ? 0xFFFFA0 : 0xE0E0E0);
         if (label != null && !label.isEmpty()) {
-            float scale = Math.max(1f, h / 40f * 2f);
-            float textW = font.width(label, scale);
-            float textH = 8 * scale;
-            font.draw(g, label, x + (w - textW) / 2f, y + (h - textH) / 2f, scale, color, true);
+            int color = !enabled ? 0xFFA0A0A0 : (mouseOver ? 0xFFFFFFA0 : 0xFFE0E0E0);
+            float textW = font.width(label) * s;
+            float textH = font.height() * s;
+            font.draw(g, label, px + (pw - textW) / 2f, py + (ph - textH) / 2f, s, color, true);
         }
     }
 
-    /** Nine-slice z tekstury SRC_W x SRC_H (uv w ukladzie pikseli zrodla). */
     private static void drawNine(GuiBlit g, int tex, int border, float f,
                                  float x, float y, float w, float h) {
         float b = border * f;
         float midW = Math.max(0, w - 2 * b);
         float midH = Math.max(0, h - 2 * b);
-        float bS = border; // w pikselach zrodla
-
-        // narozniki i krawedzie (w pikselach zrodla)
+        int bS = border;
         float[][] quads = {
                 {0, 0, b, b, 0, 0, bS, bS},
                 {b, 0, midW, b, bS, 0, SRC_W - bS, bS},
