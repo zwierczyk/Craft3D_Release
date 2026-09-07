@@ -218,7 +218,7 @@ public final class FontRenderer {
     public void draw(GuiBlit g, String s, float x, float y, float scale, int argb, boolean shadow) {
         float a = ((argb >>> 24) & 255) / 255f;
         if (shadow) {
-            drawRgba(g, s, x + scale, y + scale, scale, 0f, 0f, 0f, a);
+            drawRgba(g, s, x + scale, y + scale, scale, 0f, 0f, 0f, a * 0.25f);
         }
         float r = ((argb >>> 16) & 255) / 255f;
         float gr = ((argb >>> 8) & 255) / 255f;
