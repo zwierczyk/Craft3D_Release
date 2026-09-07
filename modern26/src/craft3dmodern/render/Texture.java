@@ -31,10 +31,31 @@ import static org.lwjgl.opengl.GL11.glTexParameteri;
 public final class Texture {
     private Texture() {}
 
-    /** Root assets (domyslnie: katalog assets/ w katalogu roboczym). */
+    /** Root assets (domyslnie: modern26/assets; wykrywane tez z katalogu repo). */
     public static File assetRoot() {
         String custom = System.getProperty("craft3dmodern.assets");
-        return new File(custom == null ? "assets" : custom);
+        if (custom != null) return new File(custom);
+        File cwd = new File(System.getProperty("user.dir", "."));
+        // 1) wprost: cwd/assets oraz cwd/modern26/assets
+        File[] direct = {new File(cwd, "assets"), new File(cwd, "modern26/assets")};
+        for (File c : direct) {
+            if (looksLikeModernAssets(c)) return c;
+        }
+        // 2) szukaj w gore az do katalogu repo (IntelliJ moze stac w podfolderze)
+        File p = cwd;
+        for (int i = 0; i < 8 && p != null; i++) {
+            File c = new File(p, "modern26/assets");
+            if (looksLikeModernAssets(c)) return c;
+            c = new File(p, "assets");
+            if (looksLikeModernAssets(c)) return c;
+            p = p.getParentFile();
+        }
+        return new File(cwd, "assets");
+    }
+
+    private static boolean looksLikeModernAssets(File dir) {
+        return new File(dir, "minecraft-26.2.zip").isFile()
+                || new File(dir, "minecraft/version.json").isFile();
     }
 
     /** Dekoduje plik PNG/JPEG do BufferedImage (bez kontekstu GL). */

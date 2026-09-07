@@ -25,6 +25,13 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) {
+        // Assety 26.2: rozpakuj jesli potrzeba (dziala tez z IntelliJ, bez build.bat).
+        try {
+            craft3dmodern.test.AssetsExtractor.main(new String[0]);
+        } catch (Throwable t) {
+            System.err.println("[Craft3D-Modern] asset extraction warning: " + t.getMessage());
+        }
+
         if (!glfwInit()) {
             System.err.println("[Craft3D-Modern] GLFW init failed");
             System.exit(1);

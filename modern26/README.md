@@ -5,6 +5,21 @@ release, 16.06.2026): OpenGL 3.3 core-profile + shadery, prawdziwe assety
 vanilla 26.2. Stary projekt (katalog glowny repo) pozostaje wierny erze
 1.12 / MCP 9.40 — ten katalog (`modern26/`) to osobny, nowy silnik.
 
+## IntelliJ (szybki start)
+
+Modul projektu (`Craft3D_Release.iml`) ma juz zarejestrowane `modern26/src`
+jako zrodla i `modern26/lib` jako biblioteke. Po `git pull`:
+
+1. Jesli IntelliJ nie przeladowal modulu: prawy przycisk na projekcie →
+   `Reload from Disk` (albo `File -> Reload All from Disk`), ewentualnie
+   `File -> Invalidate Caches / Restart`.
+2. Run/Debug Configuration: main class `craft3dmodern.Main`, working dir
+   moze byc dowolny (assety wykrywaja sie same, przy starcie nastepuje
+   auto-rozpakowanie `minecraft-26.2.zip`).
+3. Jesli pliki nadal widac na pomaranczowo (folder nieuznany za zrodla):
+   prawy przycisk na `modern26/src` → `Mark Directory as` → `Sources Root`.
+
+
 ## Szybki start
 
 Wymagania: **Java JDK 8+** (IntelliJ ma wlasna; jesli `javac`/`java` sa w
