@@ -73,6 +73,15 @@ public final class VanillaGuiTextures {
             File gui = AssetFinder.findAssetDir("gui", VanillaGuiTextures.class);
             if (gui == null) return null;
             File file = new File(new File(gui, "container"), name + ".png");
+            if (!file.isFile()) {
+                file = new File(new File(gui, "sprites"), name + ".png");
+            }
+            if (!file.isFile()) {
+                file = new File(new File(new File(gui, "sprites"), "container"), name + ".png");
+            }
+            if (!file.isFile()) {
+                file = new File(new File(new File(new File(gui, "sprites"), "container"), "creative_inventory"), name + ".png");
+            }
             BufferedImage image = ImageIO.read(file);
             if (image == null) return null;
             int w = image.getWidth();

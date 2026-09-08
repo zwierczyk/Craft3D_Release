@@ -83,13 +83,12 @@ public final class CreativeUIRenderer {
     public static int panelX(int screenW) { return screenW / 2 - PANEL_W / 2; }
     public static int panelY(int screenH) { return screenH / 2 - PANEL_H / 2; }
 
-    // ==== ZAKLADKI KREATYWNE (pionowa belka po lewej, jak w vanilla MC) ====
-    private static final int TAB_RAIL_W = 22 * SCALE;      // 66
-    private static final int TAB_RAIL_H = 24 * SCALE;      // 72
-    private static final int TAB_STEP = TAB_RAIL_H + 2;    // 74 (2 px odstepu)
-    private static final int TAB_OVERLAP = 6 * SCALE;      // 18 px wchodzi na panel
+    // ==== ZAKLADKI KREATYWNE (pionowa belka po lewej, sprite'y tab_bottom z 26.2) ====
+    private static final int TAB_RAIL_W = 26 * SCALE;      // 78
+    private static final int TAB_RAIL_H = 32 * SCALE;      // 96
+    private static final int TAB_STEP = 32 * SCALE;        // 96 (sprites same height)
 
-    public static int tabRailX(int screenW) { return panelX(screenW) - TAB_RAIL_W + TAB_OVERLAP; }
+    public static int tabRailX(int screenW) { return gridX(screenW) - TAB_RAIL_W - 4 * SCALE; }
     public static int tabRailY(int screenH, int tab) { return panelY(screenH) + 4 * SCALE + tab * TAB_STEP; }
     public static int tabCount() { return 5; }
     public static int tabHeightSmall() { return TAB_RAIL_H; }
@@ -116,35 +115,20 @@ public final class CreativeUIRenderer {
                             int[] invIds, int[] invCnts, int selectedSlot,
                             int cursorId, int cursorCount) {
         ensureLoaded();
-        UIStyle.drawDimBackground(screenW, screenH, 0.55f);
+        // Ciemne wnetrze jak w vanilla creative - swiat widoczny, ale przygaszony.
+        UIStyle.drawDimBackground(screenW, screenH, 0.45f);
 
         int px = panelX(screenW);
         int py = panelY(screenH);
 
-        // ==== PANEL BACKGROUND (creative_items.png, fragment 176x136) ====
-        if (texCreative > 0) {
-            glEnable(GL_TEXTURE_2D);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glBindTexture(GL_TEXTURE_2D, texCreative);
-            glColor4f(1f, 1f, 1f, 1f);
-            float u1 = (float) TEX_W / 256f;
-            float v1 = (float) TEX_H / 256f;
-            glBegin(GL_QUADS);
-            glTexCoord2f(0, 0);   glVertex2i(px, py);
-            glTexCoord2f(u1, 0);  glVertex2i(px + PANEL_W, py);
-            glTexCoord2f(u1, v1); glVertex2i(px + PANEL_W, py + PANEL_H);
-            glTexCoord2f(0, v1);  glVertex2i(px, py + PANEL_H);
-            glEnd();
-        } else {
-            // Fallback
-            UIStyle.drawPanel(px, py, PANEL_W, PANEL_H);
-        }
+        // Lekki, polprzezroczysty "obrys" obszaru kontenera (bez starego PNG-panelu).
+        glDisable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.05f, 0.06f, 0.08f, 0.30f);
+        UIStyle.quad(px, py, PANEL_W, PANEL_H);
 
-        // Tytul (MC: x=8, y=6, kolor 4210752 = 0x404040)
-        font.drawTextDark(trans.tr("creative.title"), px + 8 * SCALE, py + 6 * SCALE, 0.55f);
-
-        // ==== ZAKLADKI: pionowa belka kategorii po lewej (jak vanilla MC) ====
+        // ==== ZAKLADKI: pionowa belka kategorii (sprite'y tab_bottom z 26.2) ====
         int[] tabIcons = {
             craft3dgl.MinecraftGL.GRASS,           // All
             craft3dgl.MinecraftGL.DIRT,             // Bloki
@@ -165,95 +149,94 @@ public final class CreativeUIRenderer {
         for (int i = 0; i < tabCount; i++) {
             int ty = craft3dgl.ui.CreativeUIRenderer.tabRailY(screenH, i);
             boolean selected = (i == creativeTab);
-            // Wybrany tab nachodzi na panel (OVERLAP), reszta wystaje w lewo.
-            glDisable(GL_TEXTURE_2D);
-            if (selected) {
-                glColor4f(0.87f, 0.87f, 0.87f, 1f);
-                UIStyle.quad(tabX, ty, tabW, tabH);
-                glColor4f(0.13f, 0.13f, 0.13f, 1f);
-                UIStyle.quad(tabX + tabW, ty, 2 * SCALE, tabH);
-            } else {
-                glColor4f(0.47f, 0.47f, 0.47f, 1f);
-                UIStyle.quad(tabX, ty, tabW, tabH);
-                glColor4f(0.12f, 0.12f, 0.12f, 1f);
-                UIStyle.lineRect(tabX, ty, tabW, tabH);
-            }
-            glEnable(GL_TEXTURE_2D);
-            int iconSize = 14 * SCALE;
+            String skin = selected
+                    ? "tab_bottom_selected_" + (i + 1)
+                    : "tab_bottom_unselected_" + (i + 1);
+            // Wybrany tab rysuje sie na wierzchu (laczy sie z obszarem slotow).
+            VanillaGuiTextures.drawRegion(skin, tabX, ty, 0, 0, 26, 32, SCALE);
+            int iconSize = 16 * SCALE;
             int iconOff = (tabW - iconSize) / 2;
-            int iconY = ty + (tabH - iconSize) / 2 - 1;
+            int iconY = ty + 7 * SCALE;
+            glEnable(GL_TEXTURE_2D);
             iconDrawer.drawStackIcon(tabIcons[i], 1, tabX + iconOff, iconY, iconSize);
             if (mx >= tabX && mx < tabX + tabW && my >= ty && my < ty + tabH) {
                 hoverTab = i;
             }
         }
 
-        // ==== GRID SLOTOW 9x5 = 45 (icons wrisujemy na wierzchu PNG slotow) ====
+        // ==== GRID 9x5 = 45: kazdy slot to osobna komorka slot.png (jak vanilla) ====
         int gX = gridX(screenW);
         int gY = gridY(screenH);
         int tipId = 0;
         for (int i = 0; i < 45; i++) {
             int col = i % 9, row = i / 9;
             int sx = gX + col * SLOT_PITCH, sy = gY + row * SLOT_PITCH;
-            if (i < items.length && items[i] > 0) {
-                // Centruj icon w slocie
-                int off = (SLOT_PITCH - SLOT_SIZE) / 2;
-                iconDrawer.drawStackIcon(items[i], 1, sx + off, sy + off, SLOT_SIZE);
-            }
-            // Hover highlight (caly slot, nie tylko mniejszy prostokat)
-            if (mx >= sx && mx < sx + SLOT_PITCH && my >= sy && my < sy + SLOT_PITCH) {
+            VanillaGuiTextures.drawRegion("slot", sx + 3, sy + 3, 1, 1, 16, 16, SCALE);
+            boolean over = mx >= sx && mx < sx + SLOT_PITCH && my >= sy && my < sy + SLOT_PITCH;
+            if (over) {
                 glDisable(GL_TEXTURE_2D);
                 glEnable(GL_BLEND);
-                glColor4f(1f, 1f, 1f, 0.35f);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glColor4f(1f, 1f, 1f, 0.30f);
                 UIStyle.quad(sx, sy, SLOT_PITCH, SLOT_PITCH);
+                glColor4f(1f, 1f, 1f, 0.80f);
+                UIStyle.lineRect(sx, sy, SLOT_PITCH, SLOT_PITCH);
                 glEnable(GL_TEXTURE_2D);
                 if (i < items.length && items[i] > 0) tipId = items[i];
             }
+            if (i < items.length && items[i] > 0) {
+                // Centruj icon w slocie (48 px w komorce 54 px).
+                int off = (SLOT_PITCH - SLOT_SIZE) / 2;
+                iconDrawer.drawStackIcon(items[i], 1, sx + off, sy + off, SLOT_SIZE);
+            }
         }
 
-        // ==== HOTBAR (9 slotow na dole) ====
+        // ==== HOTBAR (9 slotow, wybrany ma jasna ramke) ====
         int hY = hotY(screenH);
         int hotTip = 0;
         for (int col = 0; col < 9; col++) {
             int sx = invX(screenW) + col * SLOT_PITCH;
+            VanillaGuiTextures.drawRegion("slot", sx + 3, hY + 3, 1, 1, 16, 16, SCALE);
             if (col == selectedSlot) {
-                // Highlight selected slot (jasna obwodka)
                 glDisable(GL_TEXTURE_2D);
                 glColor4f(1f, 1f, 1f, 1f);
                 UIStyle.lineRect(sx - 1, hY - 1, SLOT_PITCH, SLOT_PITCH);
-                UIStyle.lineRect(sx, hY, SLOT_PITCH - 2, SLOT_PITCH - 2);
                 glEnable(GL_TEXTURE_2D);
             }
-            int hOff = (SLOT_PITCH - SLOT_SIZE) / 2;
-            iconDrawer.drawStackIcon(invIds[col], invCnts[col], sx + hOff, hY + hOff, SLOT_SIZE);
-            // Hover na caly slot
-            if (mx >= sx && mx < sx + SLOT_PITCH && my >= hY && my < hY + SLOT_PITCH) {
+            boolean over = mx >= sx && mx < sx + SLOT_PITCH && my >= hY && my < hY + SLOT_PITCH;
+            if (over) {
                 glDisable(GL_TEXTURE_2D);
                 glEnable(GL_BLEND);
-                glColor4f(1f, 1f, 1f, 0.35f);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glColor4f(1f, 1f, 1f, 0.30f);
                 UIStyle.quad(sx, hY, SLOT_PITCH, SLOT_PITCH);
                 glEnable(GL_TEXTURE_2D);
                 if (invIds[col] > 0) hotTip = invIds[col];
             }
+            int hOff = (SLOT_PITCH - SLOT_SIZE) / 2;
+            iconDrawer.drawStackIcon(invIds[col], invCnts[col], sx + hOff, hY + hOff, SLOT_SIZE);
         }
 
-        // ==== TRASH SLOT ====
+        // ==== KOSZ NA PRZEDMIOTY (komorka + czerwony znak) ====
         int tX = trashX(screenW);
         int tY2 = trashY(screenH);
         boolean trashHover = UIStyle.inside(mx, my, tX, tY2, TRASH_W, TRASH_W);
+        VanillaGuiTextures.drawRegion("slot", tX, tY2, 1, 1, 16, 16, SCALE);
         glDisable(GL_TEXTURE_2D);
-        glColor4f(trashHover ? 0.80f : 0.60f, 0.15f, 0.15f, 1f);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(trashHover ? 0.85f : 0.60f, 0.10f, 0.10f, 0.85f);
         UIStyle.quad(tX, tY2, TRASH_W, TRASH_W);
-        glColor4f(0.20f, 0.20f, 0.20f, 1f);
-        UIStyle.lineRect(tX, tY2, TRASH_W, TRASH_W);
-        // Ikona kubelka smieci (proceduralna, biale kreski)
         glColor4f(0.95f, 0.95f, 0.95f, 1f);
-        UIStyle.quad(tX + 8, tY2 + 10, 32, 4);              // pokrywa
-        UIStyle.quad(tX + 12, tY2 + 8, 24, 4);              // uchwyt na gorze
-        UIStyle.lineRect(tX + 10, tY2 + 14, 28, 26);        // kubelek
-        UIStyle.quad(tX + 16, tY2 + 18, 3, 18);             // paski
-        UIStyle.quad(tX + 22, tY2 + 18, 3, 18);
-        UIStyle.quad(tX + 28, tY2 + 18, 3, 18);
+        int cx = tX + TRASH_W / 2;
+        int cy = tY2 + TRASH_W / 2;
+        int r = TRASH_W / 3;
+        glBegin(GL_QUADS);
+        glVertex2i(cx - r, cy - 3); glVertex2i(cx - r, cy + 3); glVertex2i(cx + r, cy + 3); glVertex2i(cx + r, cy - 3);
+        glEnd();
+        glBegin(GL_QUADS);
+        glVertex2i(cx - 3, cy - r); glVertex2i(cx + 3, cy - r); glVertex2i(cx + 3, cy + r); glVertex2i(cx - 3, cy + r);
+        glEnd();
         glEnable(GL_TEXTURE_2D);
         if (trashHover) Tooltip.draw(font, trans.tr("creative.trash.short"), mx, my, screenW, screenH);
 
@@ -264,9 +247,10 @@ public final class CreativeUIRenderer {
         else if (hotTip > 0) tipText = craft3dgl.items.ItemNames.itemName(hotTip, trans.getLanguage());
         if (tipText != null) Tooltip.draw(font, tipText, mx, my, screenW, screenH);
 
-        // ==== CURSOR ITEM (item na kursorze przy przenoszeniu) ====
+        // ==== CURSOR ITEM (przenoszony przedmiot pod kursorem) ====
         if (cursorId > 0 && cursorCount > 0) {
-            iconDrawer.drawStackIcon(cursorId, cursorCount, mx - 16, my - 16, 32);
+            iconDrawer.drawStackIcon(cursorId, cursorCount, mx - 24, my - 24, 16 * SCALE);
         }
+        glColor4f(1f, 1f, 1f, 1f);
     }
 }
