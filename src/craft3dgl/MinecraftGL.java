@@ -8056,11 +8056,15 @@ public class MinecraftGL {
 
     void drawChatUI() {
         long now = System.currentTimeMillis();
-        final int fontScale = 2;
+        // Chat skaluje sie jak GUI vanilla: s = guiScale (height/360, minimum 320px szerokosci).
+        int s = Math.max(1, Math.round(height / 360f));
+        while (s > 1 && width / s < 320) s--;
+        final int fontScale = s;
         final int lineHeight = 9 * fontScale;
         final int chatWidth = Math.min(width - 4, 320 * fontScale);
-        final int maxLines = chatOpen ? Math.max(10, (height - 48) / lineHeight) : 10;
-        int bottom = height - 40;
+        final int maxLines = chatOpen ? Math.max(10, (height - 24 * fontScale) / lineHeight) : 10;
+        int inputTop = height - 10 * fontScale;
+        int bottom = chatOpen ? inputTop - 4 * fontScale : height - 8 * fontScale;
         int newest = chatLog.size() - 1 - (chatOpen ? chatScroll : 0);
         int shown = 0;
         for (int i = newest; i >= 0 && shown < maxLines; i--) {
@@ -8074,25 +8078,14 @@ public class MinecraftGL {
                 alpha = remaining * remaining;
             }
             int lineY = bottom - (shown + 1) * lineHeight;
-            glDisable(GL_TEXTURE_2D);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glColor4f(0f, 0f, 0f, 0.5f * alpha);
-            quad(2, lineY, chatWidth, lineHeight);
+            if (lineY < 0) break;
+            // Vanilla chat: bialy tekst z cieniem, bez czarnych ramek pod liniami.
             fontRenderer.drawVanillaText(message.text, 4, lineY + fontScale, fontScale, alpha);
             shown++;
         }
 
         if (chatOpen) {
-            // GuiChat's GuiTextField: a simple translucent black strip at the
-            // bottom, no custom title, frame, prompt, or neon decoration.
-            int inputY = height - 24;
-            glDisable(GL_TEXTURE_2D);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glColor4f(0f, 0f, 0f, 0.5f);
-            quad(2, inputY, width - 4, 20);
-
+            // Pasek wprowadzania: czysty tekst z cieniem i migajacym kursorem (jak vanilla).
             int maxChars = Math.max(1, (width - 12) / (6 * fontScale));
             int start = Math.max(0, chatCursor - maxChars + 1);
             int end = Math.min(chatInput.length(), start + maxChars);
@@ -8105,20 +8098,23 @@ public class MinecraftGL {
                 int selectionW = craft3dgl.ui.FontRenderer.mcTextWidth(
                         chatInput.substring(selectionFrom, selectionTo), fontScale);
                 glDisable(GL_TEXTURE_2D);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 glColor4f(0.25f, 0.40f, 1f, 0.65f);
-                quad(selectionX, inputY + 1, selectionW, 17);
+                quad(selectionX, inputTop, selectionW, 8 * fontScale);
             }
-            fontRenderer.drawVanillaText(visible, 4, inputY + 2, fontScale, 1f);
+            fontRenderer.drawVanillaText(visible, 4, inputTop, fontScale, 1f);
             if ((now / 500L) % 2L == 0L) {
                 int cursorChars = Math.max(0, Math.min(chatCursor - start, visible.length()));
                 int cursorX = 4 + craft3dgl.ui.FontRenderer.mcTextWidth(
                         visible.substring(0, cursorChars), fontScale);
-                fontRenderer.drawVanillaText("_", cursorX, inputY + 2, fontScale, 1f);
+                fontRenderer.drawVanillaText("_", cursorX, inputTop + 6 * fontScale, fontScale, 1f);
             }
 
-            if (!chatCompletions.isEmpty()) {
+            // Podpowiedzi komend pokazuja sie dopiero po TAB (zachowanie vanilla).
+            if (chatCompletionIndex >= 0 && !chatCompletions.isEmpty()) {
                 int visibleSuggestions = Math.min(chatCompletions.size(),
-                        Math.min(10, Math.max(1, (inputY - 4) / lineHeight)));
+                        Math.min(10, Math.max(1, (inputTop - 4) / lineHeight)));
                 int firstSuggestion = 0;
                 if (chatCompletionIndex >= visibleSuggestions) {
                     firstSuggestion = chatCompletionIndex - visibleSuggestions + 1;
@@ -8126,12 +8122,14 @@ public class MinecraftGL {
                 for (int row = 0; row < visibleSuggestions; row++) {
                     int index = firstSuggestion + row;
                     if (index >= chatCompletions.size()) break;
-                    int suggestionY = inputY - (visibleSuggestions - row) * lineHeight;
+                    int suggestionY = inputTop - (visibleSuggestions - row) * lineHeight - 2 * fontScale;
                     glDisable(GL_TEXTURE_2D);
-                    glColor4f(index == chatCompletionIndex ? 0.25f : 0f,
-                            index == chatCompletionIndex ? 0.25f : 0f,
-                            index == chatCompletionIndex ? 0.25f : 0f, 0.75f);
-                    int rowWidth = Math.min(chatWidth, FontRenderer.mcTextWidth(
+                    glEnable(GL_BLEND);
+                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                    glColor4f(index == chatCompletionIndex ? 0.32f : 0f,
+                              index == chatCompletionIndex ? 0.32f : 0f,
+                              index == chatCompletionIndex ? 0.32f : 0f, 0.85f);
+                    int rowWidth = Math.min(chatWidth, craft3dgl.ui.FontRenderer.mcTextWidth(
                             chatCompletions.get(index), fontScale) + 8);
                     quad(2, suggestionY, rowWidth, lineHeight);
                     fontRenderer.drawVanillaText(chatCompletions.get(index), 4,
