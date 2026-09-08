@@ -313,6 +313,9 @@ public class MinecraftGL {
 
     static final int GAMEMODE_SURVIVAL = 0;
     static final int GAMEMODE_CREATIVE = 1;
+    // Zakladki kreatywne jak vanilla: 0..4 = kategorie, 5 = SEARCH, 6 = INVENTORY.
+    static final int CREATIVE_SEARCH = 5;
+    static final int CREATIVE_INVENTORY = 6;
     int gameMode = GAMEMODE_SURVIVAL;
     boolean flying = false;
     double lastSpacePressTime = -10;
@@ -417,7 +420,8 @@ public class MinecraftGL {
     static long packSlotKey(int kind, int idx) { return ((long) kind << 32) | (idx & 0xffffffffL); }
 
     boolean creativeInvOpen = false;
-    int creativeScroll = 0;
+    float creativeScrollOffs = 0f;      // 0..1 pozycja galetki suwaka
+    boolean creativeScrolling = false;  // przeciaganie galetki suwaka
     int creativeTab = 0;
     StringBuilder creativeSearch = new StringBuilder();
     boolean backspaceWasDown = false;
@@ -552,7 +556,12 @@ public class MinecraftGL {
         });
         glfwSetCharCallback(window, (w, codepoint) -> {
             if (creativeInvOpen) {
-                if (codepoint >= 32 && codepoint < 127 && creativeSearch.length() < 32) creativeSearch.append((char) codepoint);
+                // Vanilla: tekst trafia do pola tylko w zakladce SEARCH.
+                if (creativeTab == CREATIVE_SEARCH
+                        && codepoint >= 32 && codepoint < 127
+                        && creativeSearch.length() < 50) {
+                    creativeSearch.append((char) codepoint);
+                }
                 return;
             }
             if (!chatOpen) return;
@@ -7872,7 +7881,8 @@ public class MinecraftGL {
     void openCreativeInv() {
         creativeInvOpen = true;
         creativeTab = 0;
-        creativeScroll = 0;
+        creativeScrollOffs = 0f;
+        creativeScrolling = false;
         creativeSearch.setLength(0);
         mouseCaptured = false;
         firstMouse = true;
@@ -7900,7 +7910,11 @@ public class MinecraftGL {
         else if (creativeTab == 2) base = tools;
         else if (creativeTab == 3) base = food;
         else if (creativeTab == 4) base = misc;
+        else if (creativeTab == CREATIVE_SEARCH) base = all; // SEARCH: wszystkie przedmioty
+        else if (creativeTab == CREATIVE_INVENTORY) return new int[0];
         else base = all;
+        // Vanilla: wyszukiwarka dziala tylko w zakladce SEARCH.
+        if (creativeTab != CREATIVE_SEARCH) return base;
         String q = creativeSearch.toString().trim().toLowerCase();
         if (q.isEmpty()) return base;
         int[] tmp = new int[base.length];
@@ -7911,96 +7925,246 @@ public class MinecraftGL {
         return out;
     }
 
+    int creativeScrollRows() {
+        int n = creativeItemsForTab().length;
+        return Math.max(0, (n + 8) / 9 - 5);
+    }
+
+    int creativeScrollRow(int itemCount) {
+        int rows = Math.max(0, (itemCount + 8) / 9 - 5);
+        if (rows <= 0) return 0;
+        return Math.min(rows, (int) (creativeScrollOffs * rows + 0.5f));
+    }
+
+    boolean creativeInsideScrollbar(int mx, int my) {
+        int s = craft3dgl.ui.CreativeUIRenderer.SCALE;
+        int x = craft3dgl.ui.CreativeUIRenderer.panelX(width) + 175 * s;
+        int y = craft3dgl.ui.CreativeUIRenderer.panelY(height) + 18 * s;
+        return mx >= x && my >= y && mx < x + 14 * s && my < y + 112 * s;
+    }
+
     void handleCreativeInvInput(boolean left, boolean right) {
         double[] mxA = new double[1], myA = new double[1];
         glfwGetCursorPos(window, mxA, myA);
         int mx = (int) mxA[0], my = (int) myA[0];
         boolean eNow = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
         boolean back = glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
-        if (back && !backspaceWasDown && creativeSearch.length() > 0) creativeSearch.deleteCharAt(creativeSearch.length() - 1);
-        backspaceWasDown = back;
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escWasDown) { closeCreativeInv(); return; }
         if (eNow && !eWasDown) { closeCreativeInv(); return; }
-        // Uzywamy pozycji z CreativeUIRenderer (ten sam layout co draw)
-        int slot = craft3dgl.ui.CreativeUIRenderer.SLOT_PITCH;
-        int tabWSmall = craft3dgl.ui.CreativeUIRenderer.tabWidthSmall();
-        int tabHSmall = craft3dgl.ui.CreativeUIRenderer.tabHeightSmall();
-        // Kliki w zakladki kategorii (dolny rzad, y=topPos+132)
+        if (back && !backspaceWasDown && creativeTab == CREATIVE_SEARCH
+                && creativeSearch.length() > 0) creativeSearch.deleteCharAt(creativeSearch.length() - 1);
+        backspaceWasDown = back;
+
+        int s = craft3dgl.ui.CreativeUIRenderer.SCALE;
+        int panelPY = craft3dgl.ui.CreativeUIRenderer.panelY(height);
+
+        // Kolo myszy: przewijanie listy; zawsze zerujemy, by po zamknieciu GUI
+        // nie przeskakiwal wybrany slot hotbara.
+        if (Math.abs(pendingScroll) >= 0.01) {
+            if (creativeTab != CREATIVE_INVENTORY) {
+                int rows = creativeScrollRows();
+                if (rows > 0) {
+                    float delta = (float) (pendingScroll / rows);
+                    creativeScrollOffs = Math.max(0f, Math.min(1f, creativeScrollOffs - delta));
+                }
+            }
+            pendingScroll = 0;
+        }
+
+        // ==== Kliki w zakladki (vanilla checkTabClicked; rzad TOP/BOTTOM) ====
         if (left && !leftWasDown) {
             for (int i = 0; i < craft3dgl.ui.CreativeUIRenderer.tabCount(); i++) {
-                int tx = craft3dgl.ui.CreativeUIRenderer.tabX(width, i);
-                int ty = craft3dgl.ui.CreativeUIRenderer.tabY(height);
-                if (inside(mx, my, tx, ty, tabWSmall, tabHSmall)) {
-                    creativeTab = i; creativeScroll = 0; creativeSearch.setLength(0);
+                int tx = craft3dgl.ui.CreativeUIRenderer.tabHitX(width, i);
+                int ty = craft3dgl.ui.CreativeUIRenderer.tabHitY(height, i);
+                if (inside(mx, my, tx, ty,
+                        craft3dgl.ui.CreativeUIRenderer.tabWidthSmall(),
+                        craft3dgl.ui.CreativeUIRenderer.tabHeightSmall())) {
+                    creativeTab = i;
+                    creativeScrollOffs = 0f;
+                    creativeScrolling = false;
+                    creativeSearch.setLength(0);
                     return;
                 }
             }
         }
-        // Grid slotow 9x5 = 45
+
+        if (creativeTab == CREATIVE_INVENTORY) {
+            handleCreativeInvTabInput(mx, my, left, right);
+            return;
+        }
+
+        // ==== Suwak: chwytanie i przeciaganie galetki (vanilla mouseClicked/Dragged) ====
+        int scrollRows = creativeScrollRows();
+        if (left) {
+            if (creativeScrolling) {
+                float guiY = (my - panelPY) / (float) s;
+                creativeScrollOffs = Math.max(0f, Math.min(1f, (guiY - 18f - 7.5f) / (112f - 15f)));
+            } else if (!leftWasDown && scrollRows > 0 && creativeInsideScrollbar(mx, my)) {
+                creativeScrolling = true;
+            }
+        } else {
+            creativeScrolling = false;
+        }
+
+        // ==== Lista przedmiotow 9x5 (z uwzglednieniem scrolla) ====
+        int slot = craft3dgl.ui.CreativeUIRenderer.SLOT_PITCH;
         int gridX = craft3dgl.ui.CreativeUIRenderer.gridX(width);
         int gridY = craft3dgl.ui.CreativeUIRenderer.gridY(height);
         int[] items = creativeItemsForTab();
-        if (left && !leftWasDown) {
-            for (int i = 0; i < 45 && i < items.length; i++) {
-                int col = i % 9;
-                int row = i / 9;
+        int scrollRow = creativeScrollRow(items.length);
+        if (left && !leftWasDown && !creativeScrolling) {
+            for (int i = 0; i < 45; i++) {
+                int col = i % 9, row = i / 9;
+                int idx = (row + scrollRow) * 9 + col;
+                if (idx >= items.length) break;
                 int sx = gridX + col * slot;
                 int sy = gridY + row * slot;
                 if (inside(mx, my, sx, sy, slot, slot)) {
-                    cursorId = items[i]; cursorCount = maxStack(cursorId);
+                    cursorId = items[idx];
+                    cursorCount = maxStack(cursorId);
                     return;
                 }
             }
         }
-        // Hotbar (9 slotow na dole)
+        // Hotbar (9 slotow, y=112) - tez w zakladkach kategorii/SEARCH.
         int invX = craft3dgl.ui.CreativeUIRenderer.invX(width);
         int invY = craft3dgl.ui.CreativeUIRenderer.invY(height);
-        // Trash slot
-        int trashX = craft3dgl.ui.CreativeUIRenderer.trashX(width);
-        int trashY = craft3dgl.ui.CreativeUIRenderer.trashY(height);
-        int trashW = craft3dgl.ui.CreativeUIRenderer.TRASH_W;
-        if (left && !leftWasDown && inside(mx, my, trashX, trashY, trashW, trashW)) {
-            boolean shift = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
-            if (shift) {
-                for (int i = 0; i < INVENTORY_SIZE; i++) { invId[i] = 0; invCount[i] = 0; }
-                for (int i = 0; i < equipId.length; i++) { equipId[i] = 0; equipCount[i] = 0; }
-                cursorId = 0; cursorCount = 0;
-            } else {
-                cursorId = 0; cursorCount = 0;
-            }
-            return;
-        }
-        // Kliki w hotbar
         if (left && !leftWasDown) {
             for (int col = 0; col < 9; col++) {
                 int sx = invX + col * slot;
                 if (inside(mx, my, sx, invY, slot, slot)) {
-                    // Kliknac na slot hotbar - jesli mamy cursor item, wsadz do slotu
-                    if (cursorId > 0 && cursorCount > 0) {
-                        invId[col] = cursorId;
-                        invCount[col] = cursorCount;
-                        cursorId = 0; cursorCount = 0;
-                    } else if (invId[col] > 0) {
-                        // Pusty cursor - podnies item ze slota
-                        cursorId = invId[col];
-                        cursorCount = invCount[col];
-                        invId[col] = 0; invCount[col] = 0;
-                    }
+                    creativeClickStackSlot(invId, invCount, col);
                     selectedSlot = col;
                     return;
                 }
             }
         }
-        // Prawy klik na slot = wyrzuc jeden item z cursor
+        // Prawy klik = dokladanie po jednym do slotu.
         if (right && cursorId > 0 && cursorCount > 0) {
             for (int col = 0; col < 9; col++) {
                 int sx = invX + col * slot;
                 if (inside(mx, my, sx, invY, slot, slot)) {
-                    if (invId[col] == 0 || (invId[col] == cursorId && invCount[col] < maxStack(cursorId))) {
-                        invId[col] = cursorId;
-                        invCount[col] = (invId[col] == cursorId ? invCount[col] + 1 : 1);
+                    depositOne(invId, invCount, col);
+                    return;
+                }
+            }
+        }
+    }
+
+    /** Klik LPM w zwykly slot (hotbar/zapasy/pancerz): wloz/podnies/zamien. */
+    void creativeClickStackSlot(int[] ids, int[] cnts, int idx) {
+        if (cursorId > 0 && cursorCount > 0) {
+            if (ids[idx] > 0 && ids[idx] != cursorId) {
+                int tmpId = ids[idx]; int tmpCnt = cnts[idx];
+                ids[idx] = cursorId; cnts[idx] = cursorCount;
+                cursorId = tmpId; cursorCount = tmpCnt;
+            } else if (ids[idx] == 0 || cnts[idx] <= 0) {
+                ids[idx] = cursorId; cnts[idx] = cursorCount;
+                cursorId = 0; cursorCount = 0;
+            } else {
+                int room = maxStack(cursorId) - cnts[idx];
+                if (room > 0) {
+                    int add = Math.min(room, cursorCount);
+                    cnts[idx] += add; cursorCount -= add;
+                    if (cursorCount <= 0) { cursorId = 0; cursorCount = 0; }
+                }
+            }
+        } else if (ids[idx] > 0 && cnts[idx] > 0) {
+            cursorId = ids[idx]; cursorCount = cnts[idx];
+            ids[idx] = 0; cnts[idx] = 0;
+        }
+    }
+
+    void handleCreativeInvTabInput(int mx, int my, boolean left, boolean right) {
+        int slot = craft3dgl.ui.CreativeUIRenderer.SLOT_PITCH;
+        // Pancerz 2x2 (vanilla: 54/108 x 6/33) i offhand (35,20).
+        if (left && !leftWasDown) {
+            for (int k = 0; k < 4; k++) {
+                int ax = craft3dgl.ui.CreativeUIRenderer.invTabArmorX(width, k);
+                int ay = craft3dgl.ui.CreativeUIRenderer.invTabArmorY(height, k);
+                if (inside(mx, my, ax, ay, slot, slot)) {
+                    creativeClickStackSlot(equipId, equipCount, k);
+                    return;
+                }
+            }
+            int ox = craft3dgl.ui.CreativeUIRenderer.invTabOffX(width);
+            int oy = craft3dgl.ui.CreativeUIRenderer.invTabOffY(height);
+            if (inside(mx, my, ox, oy, slot, slot)) {
+                creativeClickStackSlot(equipId, equipCount, 4);
+                return;
+            }
+            // Main inventory 3x9 (y=54,72,90).
+            int gX = craft3dgl.ui.CreativeUIRenderer.gridX(width);
+            for (int row = 0; row < 3; row++) {
+                int ry = craft3dgl.ui.CreativeUIRenderer.invTabRowY(height, row);
+                for (int col = 0; col < 9; col++) {
+                    int sx = gX + col * slot;
+                    if (inside(mx, my, sx, ry, slot, slot)) {
+                        creativeClickStackSlot(invId, invCount, 9 + row * 9 + col);
                         return;
                     }
+                }
+            }
+            // Hotbar (y=112).
+            int invX = craft3dgl.ui.CreativeUIRenderer.invX(width);
+            int invY = craft3dgl.ui.CreativeUIRenderer.invY(height);
+            for (int col = 0; col < 9; col++) {
+                int sx = invX + col * slot;
+                if (inside(mx, my, sx, invY, slot, slot)) {
+                    creativeClickStackSlot(invId, invCount, col);
+                    selectedSlot = col;
+                    return;
+                }
+            }
+            // Kosz (destroy slot 173,112): czysci kursor, z Shift cale zapasy.
+            int tx = craft3dgl.ui.CreativeUIRenderer.trashX(width);
+            int ty = craft3dgl.ui.CreativeUIRenderer.trashY(height);
+            int tw = craft3dgl.ui.CreativeUIRenderer.TRASH_W;
+            if (inside(mx, my, tx, ty, tw, tw)) {
+                boolean shift = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS
+                        || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+                if (shift) {
+                    for (int i = 0; i < INVENTORY_SIZE; i++) { invId[i] = 0; invCount[i] = 0; }
+                    for (int i = 0; i < equipId.length; i++) { equipId[i] = 0; equipCount[i] = 0; }
+                }
+                cursorId = 0; cursorCount = 0;
+                return;
+            }
+        }
+        // Prawy klik z cursor = dokladaj po jednym do slotow zapasow.
+        if (right && cursorId > 0 && cursorCount > 0) {
+            for (int k = 0; k < 4; k++) {
+                int ax = craft3dgl.ui.CreativeUIRenderer.invTabArmorX(width, k);
+                int ay = craft3dgl.ui.CreativeUIRenderer.invTabArmorY(height, k);
+                if (inside(mx, my, ax, ay, slot, slot)) {
+                    depositOne(equipId, equipCount, k);
+                    return;
+                }
+            }
+            int ox = craft3dgl.ui.CreativeUIRenderer.invTabOffX(width);
+            int oy = craft3dgl.ui.CreativeUIRenderer.invTabOffY(height);
+            if (inside(mx, my, ox, oy, slot, slot)) {
+                depositOne(equipId, equipCount, 4);
+                return;
+            }
+            int gX = craft3dgl.ui.CreativeUIRenderer.gridX(width);
+            for (int row = 0; row < 3; row++) {
+                int ry = craft3dgl.ui.CreativeUIRenderer.invTabRowY(height, row);
+                for (int col = 0; col < 9; col++) {
+                    int sx = gX + col * slot;
+                    if (inside(mx, my, sx, ry, slot, slot)) {
+                        depositOne(invId, invCount, 9 + row * 9 + col);
+                        return;
+                    }
+                }
+            }
+            int invX = craft3dgl.ui.CreativeUIRenderer.invX(width);
+            int invY = craft3dgl.ui.CreativeUIRenderer.invY(height);
+            for (int col = 0; col < 9; col++) {
+                int sx = invX + col * slot;
+                if (inside(mx, my, sx, invY, slot, slot)) {
+                    depositOne(invId, invCount, col);
+                    return;
                 }
             }
         }
@@ -8050,8 +8214,10 @@ public class MinecraftGL {
         translationSys.setLanguage(language);
         craft3dgl.ui.CreativeUIRenderer.draw(fontRenderer, this::drawStackIcon, translationSys,
                 width, height, (int)mxA[0], (int)myA[0],
-                creativeItemsForTab(), creativeTab, creativeSearch.toString(),
-                invId, invCount, selectedSlot, cursorId, cursorCount);
+                creativeTab, creativeSearch.toString(), creativeScrollOffs,
+                creativeItemsForTab(),
+                invId, invCount, selectedSlot, equipId, equipCount,
+                cursorId, cursorCount);
     }
 
     void drawChatUI() {
