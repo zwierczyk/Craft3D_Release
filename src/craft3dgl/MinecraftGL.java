@@ -7923,14 +7923,14 @@ public class MinecraftGL {
         if (eNow && !eWasDown) { closeCreativeInv(); return; }
         // Uzywamy pozycji z CreativeUIRenderer (ten sam layout co draw)
         int slot = craft3dgl.ui.CreativeUIRenderer.SLOT_PITCH;
-        int tabX = craft3dgl.ui.CreativeUIRenderer.tabRailX(width);
         int tabWSmall = craft3dgl.ui.CreativeUIRenderer.tabWidthSmall();
         int tabHSmall = craft3dgl.ui.CreativeUIRenderer.tabHeightSmall();
-        // Kliki w pionowa belke kategorii (lewa strona panelu)
+        // Kliki w zakladki kategorii (dolny rzad, y=topPos+132)
         if (left && !leftWasDown) {
             for (int i = 0; i < craft3dgl.ui.CreativeUIRenderer.tabCount(); i++) {
-                int ty = craft3dgl.ui.CreativeUIRenderer.tabRailY(height, i);
-                if (inside(mx, my, tabX, ty, tabWSmall, tabHSmall)) {
+                int tx = craft3dgl.ui.CreativeUIRenderer.tabX(width, i);
+                int ty = craft3dgl.ui.CreativeUIRenderer.tabY(height);
+                if (inside(mx, my, tx, ty, tabWSmall, tabHSmall)) {
                     creativeTab = i; creativeScroll = 0; creativeSearch.setLength(0);
                     return;
                 }
