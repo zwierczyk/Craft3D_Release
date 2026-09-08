@@ -88,22 +88,21 @@ public final class CreativeUIRenderer {
     private static final int TAB_RAIL_H = 32 * SCALE;      // 96
     private static final int TAB_STEP = 32 * SCALE;        // 96 (sprites same height)
 
-    public static int tabRailX(int screenW) { return gridX(screenW) - TAB_RAIL_W - 4 * SCALE; }
+    public static int tabRailX(int screenW) { return panelX(screenW) - TAB_RAIL_W; }
     public static int tabRailY(int screenH, int tab) { return panelY(screenH) + 4 * SCALE + tab * TAB_STEP; }
     public static int tabCount() { return 5; }
     public static int tabHeightSmall() { return TAB_RAIL_H; }
     public static int tabWidthSmall() { return TAB_RAIL_W; }
-    // Grid slotow MC: x=9, y=18
-    public static int gridX(int screenW) { return panelX(screenW) + 9 * SCALE; }
+    // Grid slotow: 9 kolumn po 18 px, lewy margines 7 px (jak w kontenerach vanilla).
+    public static int gridX(int screenW) { return panelX(screenW) + 7 * SCALE; }
     public static int gridY(int screenH) { return panelY(screenH) + 18 * SCALE; }
-    // Hotbar MC: x=9, y=112
-    public static int invX(int screenW) { return panelX(screenW) + 9 * SCALE; }
+    // Hotbar: kolumny rowno z gridem.
+    public static int invX(int screenW) { return gridX(screenW); }
     public static int invY(int screenH) { return panelY(screenH) + 112 * SCALE; }
     public static int hotY(int screenH) { return invY(screenH); }
-    // Trash MC: x=173, y=112 - ale my mamy 176 wide, wiec przesuwamy do wewnatrz
-    // Kosz - poza panelem po prawej stronie, na wysokosci grid
-    public static int trashX(int screenW) { return panelX(screenW) + PANEL_W + 15; }
-    public static int trashY(int screenH) { return panelY(screenH) + 30 * SCALE; }
+    // Kosz: zaraz za 9 slotem hotbara, w tej samej linii.
+    public static int trashX(int screenW) { return invX(screenW) + 9 * SLOT_PITCH + 2 * SCALE; }
+    public static int trashY(int screenH) { return hotY(screenH); }
     // Search box (dla search tab) MC: x=82, y=6
     public static int searchX(int screenW) { return panelX(screenW) + 82 * SCALE; }
     public static int searchY(int screenH) { return panelY(screenH) + 6 * SCALE; }
@@ -117,16 +116,6 @@ public final class CreativeUIRenderer {
         ensureLoaded();
         // Ciemne wnetrze jak w vanilla creative - swiat widoczny, ale przygaszony.
         UIStyle.drawDimBackground(screenW, screenH, 0.45f);
-
-        int px = panelX(screenW);
-        int py = panelY(screenH);
-
-        // Lekki, polprzezroczysty "obrys" obszaru kontenera (bez starego PNG-panelu).
-        glDisable(GL_TEXTURE_2D);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glColor4f(0.05f, 0.06f, 0.08f, 0.30f);
-        UIStyle.quad(px, py, PANEL_W, PANEL_H);
 
         // ==== ZAKLADKI: pionowa belka kategorii (sprite'y tab_bottom z 26.2) ====
         int[] tabIcons = {
@@ -230,12 +219,12 @@ public final class CreativeUIRenderer {
         glColor4f(0.95f, 0.95f, 0.95f, 1f);
         int cx = tX + TRASH_W / 2;
         int cy = tY2 + TRASH_W / 2;
-        int r = TRASH_W / 3;
+        int r = TRASH_W / 4;
         glBegin(GL_QUADS);
-        glVertex2i(cx - r, cy - 3); glVertex2i(cx - r, cy + 3); glVertex2i(cx + r, cy + 3); glVertex2i(cx + r, cy - 3);
+        glVertex2i(cx - r, cy - 2); glVertex2i(cx - r, cy + 2); glVertex2i(cx + r, cy + 2); glVertex2i(cx + r, cy - 2);
         glEnd();
         glBegin(GL_QUADS);
-        glVertex2i(cx - 3, cy - r); glVertex2i(cx + 3, cy - r); glVertex2i(cx + 3, cy + r); glVertex2i(cx - 3, cy + r);
+        glVertex2i(cx - 2, cy - r); glVertex2i(cx + 2, cy - r); glVertex2i(cx + 2, cy + r); glVertex2i(cx - 2, cy + r);
         glEnd();
         glEnable(GL_TEXTURE_2D);
         if (trashHover) Tooltip.draw(font, trans.tr("creative.trash.short"), mx, my, screenW, screenH);
