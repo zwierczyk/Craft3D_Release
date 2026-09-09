@@ -285,7 +285,7 @@ public class MinecraftGL {
      * experiment compiled for source compatibility, but never select it for
      * gameplay: the MCP fixed-function atlas/lightmap path is authoritative.
      */
-    static final boolean USE_MODERN_RENDERER = false;
+    static final boolean USE_MODERN_RENDERER = true;
     /** GameRenderer - laduje core shadery raz na start. */
     final craft3dgl.blaze3d.renderer.GameRenderer gameRenderer = craft3dgl.blaze3d.renderer.GameRenderer.getInstance();
     boolean menuMouseWasDown = false;
@@ -4522,7 +4522,8 @@ public class MinecraftGL {
             gameRenderer.getLightmapTexture().update(currentDayMult, hasNightVision() ? 0.90f : 0f);
         }
         if (gameRenderer.getWaterTexture() != null) gameRenderer.getWaterTexture().update();
-        if (USE_MODERN_RENDERER) drawModernChunks(false);
+        boolean modernOk = modernRendererReady();
+        if (modernOk) drawModernChunks(false);
         else drawChunks(false);
         // Doors are CUTOUT geometry and belong before entities/translucency.
         drawDoors();
@@ -4539,8 +4540,8 @@ public class MinecraftGL {
             craft3dgl.ui.CuboidHelper.clearTint();
             glColor4f(1,1,1,1);
         }
-        if (!USE_MODERN_RENDERER) drawChunks(true);
-        if (USE_MODERN_RENDERER) drawModernChunks(true);
+        if (modernOk) drawModernChunks(true);
+        else drawChunks(true);
         craft3dgl.world.WeatherRenderer.draw(world, worldSeed, x, y + eyeHeight(), z,
                 gameTime, rainStrength);
         glBindTexture(GL_TEXTURE_2D, textureAtlas);
@@ -4640,6 +4641,14 @@ public class MinecraftGL {
         m.put(0).put(0).put(0).put(1).flip();
         glMultMatrixf(m);
         glTranslated(-eyeX, -eyeY, -eyeZ);
+    }
+
+    /** Nowoczesny (shaderowy) renderer dziala tylko gdy shadery sie zaladowaly. */
+    boolean modernRendererReady() {
+        return USE_MODERN_RENDERER
+                && gameRenderer.rendertypeSolidShader() != null
+                && gameRenderer.rendertypeCutoutShader() != null
+                && gameRenderer.rendertypeTranslucentShader() != null;
     }
 
     void drawChunks(boolean leaves) {
@@ -5350,9 +5359,12 @@ public class MinecraftGL {
                     else { vbo = ch.modernVboTranslucent; vc = ch.modernVertexCountTranslucent; }
                     if (vbo == null || vc == 0) continue;
                     vbo.bind();
-                    fmt.setupBufferState(0L);
+                    // KRYTYCZNE: shader czyta dane z generic vertex attributes,
+                    // NIE z fixed-function client pointers (glVertexPointer itd.
+                    // sa ignorowane przez program GLSL -> wierzcholki w (0,0,0)).
+                    fmt.setupShaderAttribs();
                     vbo.draw(org.lwjgl.opengl.GL11.GL_QUADS);
-                    fmt.clearBufferState();
+                    fmt.clearShaderAttribs();
                     drawn++;
                 }
             }

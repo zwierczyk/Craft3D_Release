@@ -100,6 +100,48 @@ public class VertexFormat {
      * Wywoluje glVertexPointer/glColorPointer/glTexCoordPointer/glNormalPointer
      * dla kazdego elementu wg jego Usage. Musi byc VBO zbindowane przed.
      */
+
+    /**
+     * Podaje wierzcholki do PROGRAMU SHADEROWEGO (GLSL 1.20) przez generic vertex
+     * attributes. Fixed-function client pointers (glVertexPointer i inne) sa
+     * IGNOROWANE przez shader - wierzcholki wtedy leca w (0,0,0) i nic nie widac.
+     * Legacy mapowanie location (GL 2.x compatibility):
+     *   gl_Vertex=0, gl_Normal=2, gl_Color=3, gl_MultiTexCoord0..7 = 8..15.
+     */
+    public void setupShaderAttribs() {
+        int stride = this.getVertexSize();
+        for (int i = 0; i < this.elements.size(); i++) {
+            VertexFormatElement el = this.elements.get(i);
+            int offset = this.offsets.get(i);
+            int location = shaderLocation(el);
+            if (location < 0) continue;
+            int glType = el.getType().getGlType();
+            boolean normalized = el.getType() == VertexFormatElement.Type.UBYTE
+                    || el.getType() == VertexFormatElement.Type.BYTE;
+            org.lwjgl.opengl.GL20.glVertexAttribPointer(location, el.getCount(),
+                    glType, normalized, stride, offset);
+            org.lwjgl.opengl.GL20.glEnableVertexAttribArray(location);
+        }
+    }
+
+    /** Wylacza generic vertex arrays wlaczone przez setupShaderAttribs. */
+    public void clearShaderAttribs() {
+        for (int i = 0; i < this.elements.size(); i++) {
+            int location = shaderLocation(this.elements.get(i));
+            if (location >= 0) org.lwjgl.opengl.GL20.glDisableVertexAttribArray(location);
+        }
+    }
+
+    private static int shaderLocation(VertexFormatElement el) {
+        switch (el.getUsage()) {
+            case POSITION: return 0;   // gl_Vertex
+            case NORMAL:   return 2;   // gl_Normal
+            case COLOR:    return 3;   // gl_Color
+            case UV:       return 8 + el.getIndex(); // gl_MultiTexCoord0..7
+            default:       return -1;
+        }
+    }
+
     public void setupBufferState(long baseOffset) {
         int stride = this.getVertexSize();
         for (int i = 0; i < this.elements.size(); i++) {

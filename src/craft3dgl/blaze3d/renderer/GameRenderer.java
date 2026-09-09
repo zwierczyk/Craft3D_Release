@@ -60,6 +60,12 @@ public class GameRenderer {
         } catch (Throwable t) {
             System.err.println("[GameRenderer] water texture create failed: " + t);
         }
+        // Core terrain shaders (GLSL 1.20, fixed-function compatible). Bez nich
+        // rendertypeSolidShader() zwraca null i nowoczesny renderer cicho nic nie
+        // rysuje - dlatego ladujemy je TUTAJ, raz na starcie.
+        loadShader("rendertype_solid");
+        loadShader("rendertype_cutout");
+        loadShader("rendertype_translucent");
         initialized = true;
         System.out.println("[GameRenderer] init() DONE - vanilla lightmap/water ready");
     }
