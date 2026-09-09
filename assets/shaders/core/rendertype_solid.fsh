@@ -22,8 +22,7 @@ void main() {
     vec4 tex = texture2D(Sampler0, texCoord0);
     vec4 light = texture2D(Sampler1, lightCoord);
     vec4 base = tex * gl_Color * light * ColorModulator;
-    float fogValue = max(
-        linear_fog_value(sphericalVertexDistance, FogStart, FogEnd),
-        linear_fog_value(cylindricalVertexDistance, FogStart, FogEnd));
+    // Render-distance pair (26.2 fog.glsl) works on the cylindrical distance.
+    float fogValue = linear_fog_value(cylindricalVertexDistance, FogStart, FogEnd);
     gl_FragColor = vec4(mix(base.rgb, FogColor.rgb, fogValue * FogColor.a), base.a);
 }
