@@ -285,7 +285,7 @@ public class MinecraftGL {
      * experiment compiled for source compatibility, but never select it for
      * gameplay: the MCP fixed-function atlas/lightmap path is authoritative.
      */
-    static final boolean USE_MODERN_RENDERER = false;
+    static final boolean USE_MODERN_RENDERER = true;
     /** GameRenderer - laduje core shadery raz na start. */
     final craft3dgl.blaze3d.renderer.GameRenderer gameRenderer = craft3dgl.blaze3d.renderer.GameRenderer.getInstance();
     boolean menuMouseWasDown = false;
