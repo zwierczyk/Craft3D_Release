@@ -671,10 +671,10 @@ public class MinecraftGL {
         glDisable(GL_CULL_FACE);
         glClearColor(0.7529412f, 0.84705883f, 1.0f, 1.0f);
         glEnable(GL_FOG);
-        // EntityRenderer.setupFog: linear fog from 80% to 100% of the
-        // five-chunk render distance.
+        // EntityRenderer.setupFog: linear fog from 75% to 100% of the
+        // five-chunk render distance (60..80 blocks).
         glFogi(GL_FOG_MODE, GL_LINEAR);
-        glFogf(GL_FOG_START, 64.0f);
+        glFogf(GL_FOG_START, 60.0f);
         glFogf(GL_FOG_END, 80.0f);
         FloatBuffer fogColor = BufferUtils.createFloatBuffer(4).put(new float[]{0.7529412f, 0.84705883f, 1.0f, 1f});
         fogColor.flip();
@@ -4499,9 +4499,10 @@ public class MinecraftGL {
             glFogi(GL_FOG_MODE, GL_EXP);
             glFogf(GL_FOG_DENSITY, 0.10f);
         } else {
-            // Vanilla 1.12 uses linear terrain fog, not the custom EXP2 fog.
+            // EntityRenderer.setupFog: linear terrain fog from 75% to 100% of
+            // farPlaneDistance (renderDistanceChunks*16 = 5*16 = 80).
             glFogi(GL_FOG_MODE, GL_LINEAR);
-            glFogf(GL_FOG_START, 64.0f);
+            glFogf(GL_FOG_START, 60.0f);
             glFogf(GL_FOG_END, 80.0f);
         }
         java.nio.FloatBuffer fbC = org.lwjgl.BufferUtils.createFloatBuffer(4).put(fogC); fbC.flip();
@@ -5254,10 +5255,11 @@ public class MinecraftGL {
             double dayFraction = (gameTime / 1200.0) % 1.0;
             float[] fogC = craft3dgl.world.SkyRenderer.getFogColor(dayFraction,
                     weather.getRainStrength(), weather.getThunderStrength());
-            // Underwater fog - ciemnoniebieski, KROTKI zasieg (widoczność ograniczona)
+            // Underwater fog - vanilla (EntityRenderer.updateFogColor, Material.WATER):
+            // ciemny niebieski 0.02/0.02/0.20, KROTKI zasieg.
             boolean underwater = isWaterAt(x, y + eyeHeight(), z);
             if (underwater) {
-                fogC = new float[]{0.05f, 0.15f, 0.35f, 1.0f};
+                fogC = new float[]{0.02f, 0.02f, 0.20f, 1.0f};
             }
             int atlasTex = textureAtlas;
             int lightmapTex = gameRenderer.getLightmapTexId();
