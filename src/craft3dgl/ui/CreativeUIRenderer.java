@@ -239,7 +239,12 @@ public final class CreativeUIRenderer {
         if (creativeTab != TAB_INVENTORY) {
             String title = tabTitle(trans, creativeTab);
             if (title != null) {
-                font.drawVanillaContainerText(title, px + 8 * SCALE, py + 6 * SCALE, SCALE);
+                // W zakladce SEARCH pole wyszukiwania zaczyna sie na x=80; dlugie
+                // tlumaczenia (np. PL "Szukaj przedmiotow") nachodzilyby na wpisywany
+                // tekst - rysuj tytul tylko gdy miesci sie przed polem (vanilla EN).
+                if (creativeTab != TAB_SEARCH || font.mcTextWidth(title, 1) <= 70) {
+                    font.drawVanillaContainerText(title, px + 8 * SCALE, py + 6 * SCALE, SCALE);
+                }
             }
         }
 

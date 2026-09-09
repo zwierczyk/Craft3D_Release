@@ -2191,7 +2191,10 @@ public class MinecraftGL {
 
         if (eKey && !eWasDown) {
             if (inventoryOpen) closeInventory();
-            else if (creativeInvOpen) closeCreativeInv();
+            else if (creativeInvOpen) {
+                // Vanilla: w zakladce SEARCH klawisz E trafia do pola (nie zamyka GUI).
+                if (creativeTab != CREATIVE_SEARCH) closeCreativeInv();
+            }
             else if (gameMode == GAMEMODE_CREATIVE) openCreativeInv();
             else openInventory(false);
         }
@@ -7950,7 +7953,7 @@ public class MinecraftGL {
         boolean eNow = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
         boolean back = glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escWasDown) { closeCreativeInv(); return; }
-        if (eNow && !eWasDown) { closeCreativeInv(); return; }
+        if (eNow && !eWasDown && creativeTab != CREATIVE_SEARCH) { closeCreativeInv(); return; }
         if (back && !backspaceWasDown && creativeTab == CREATIVE_SEARCH
                 && creativeSearch.length() > 0) creativeSearch.deleteCharAt(creativeSearch.length() - 1);
         backspaceWasDown = back;
