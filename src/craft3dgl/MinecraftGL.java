@@ -674,7 +674,9 @@ public class MinecraftGL {
         // EntityRenderer.setupFog: linear fog from 75% to 100% of the
         // five-chunk render distance (60..80 blocks).
         glFogi(GL_FOG_MODE, GL_LINEAR);
-        glFogf(GL_FOG_START, 60.0f);
+        // FogRenderer.setupFog (26.2): rd=5*16=80, span=clamp(rd/10,4,64)=8,
+        // start=rd-span=72, end=rd=80.
+        glFogf(GL_FOG_START, 72.0f);
         glFogf(GL_FOG_END, 80.0f);
         FloatBuffer fogColor = BufferUtils.createFloatBuffer(4).put(new float[]{0.7529412f, 0.84705883f, 1.0f, 1f});
         fogColor.flip();
@@ -4499,10 +4501,10 @@ public class MinecraftGL {
             glFogi(GL_FOG_MODE, GL_EXP);
             glFogf(GL_FOG_DENSITY, 0.10f);
         } else {
-            // EntityRenderer.setupFog: linear terrain fog from 75% to 100% of
-            // farPlaneDistance (renderDistanceChunks*16 = 5*16 = 80).
+            // FogRenderer.setupFog (26.2): render distance pair =
+            // start = rd - clamp(rd/10, 4, 64), end = rd (rd = 5*16 = 80).
             glFogi(GL_FOG_MODE, GL_LINEAR);
-            glFogf(GL_FOG_START, 60.0f);
+            glFogf(GL_FOG_START, 72.0f);
             glFogf(GL_FOG_END, 80.0f);
         }
         java.nio.FloatBuffer fbC = org.lwjgl.BufferUtils.createFloatBuffer(4).put(fogC); fbC.flip();
@@ -5327,7 +5329,9 @@ public class MinecraftGL {
         craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogColor(fogC[0], fogC[1], fogC[2], 1f);
         boolean uw = isWaterAt(x, y + eyeHeight(), z);
         float fogEnd = range * CHUNK;
-        craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogStart(uw ? 2f : fogEnd * 0.75f);
+        // FogRenderer.setupFog (26.2): start = fogEnd - clamp(fogEnd/10, 4, 64).
+        float fogSpan = Math.max(4f, Math.min(64f, fogEnd / 10.0f));
+        craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogStart(uw ? 2f : fogEnd - fogSpan);
         craft3dgl.blaze3d.renderer.RenderSystem.setShaderFogEnd(uw ? 20f : fogEnd);
         craft3dgl.blaze3d.renderer.RenderSystem.setFogEnabled(true);
         craft3dgl.blaze3d.renderer.RenderSystem.applyShader();
