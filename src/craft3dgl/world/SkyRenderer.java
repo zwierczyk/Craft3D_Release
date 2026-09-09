@@ -101,13 +101,12 @@ public final class SkyRenderer {
         glUseProgramZero();
         glDepthMask(false);
         glDisable(GL_TEXTURE_2D);
-        glEnable(GL_FOG);
         glDisable(GL_ALPHA_TEST);
         glDisable(GL_BLEND);
-        glColor3f(colors[0], colors[1], colors[2]);
-        drawSkyPlane(16.0, false);
-        drawSkyPlane(-16.0, true);
         glDisable(GL_FOG);
+        // Kopula nieba z gradientem: kolor mgly na horyzoncie -> czysty kolor
+        // nieba w zenicie (jak wspolczesny vanilla sky dome).
+        drawSkyDome(colors[0], colors[1], colors[2], colors[3], colors[4], colors[5]);
 
         float weatherVisibility = 1f - clamp01(rainStrength);
         float[] sunrise = sunriseSunset(dayFraction);
@@ -168,6 +167,51 @@ public final class SkyRenderer {
             }
         }
         glEnd();
+    }
+
+    /**
+     * Wspolczesny vanilla rysuje niebo jako kopule, w ktorej kolor plynie od
+     * koloru mgly na horyzoncie do pelnego koloru nieba w zenicie (w nocy
+     * niemal czarnej). Promien 140 miesci sie w far=180, wiec nic nie jest
+     * przycinane; GL_SMOOTH daje gladki gradient miedzy wierzcholkami.
+     */
+    private static void drawSkyDome(float skyR, float skyG, float skyB,
+                                    float fogR, float fogG, float fogB) {
+        glShadeModel(GL_SMOOTH);
+        double radius = 140.0;
+        int latBands = 16;
+        int azSteps = 28;
+        double pi = Math.PI;
+        for (int i = 0; i < latBands; i++) {
+            double theta0 = -pi / 2.0 + pi * i / latBands;
+            double theta1 = theta0 + pi / latBands;
+            glBegin(GL_QUAD_STRIP);
+            for (int j = 0; j <= azSteps; j++) {
+                double az = 2.0 * pi * j / azSteps;
+                skyVertex(theta1, az, radius, skyR, skyG, skyB, fogR, fogG, fogB);
+                skyVertex(theta0, az, radius, skyR, skyG, skyB, fogR, fogG, fogB);
+            }
+            glEnd();
+        }
+        glShadeModel(GL_FLAT);
+    }
+
+    private static void skyVertex(double theta, double az, double radius,
+                                  float skyR, float skyG, float skyB,
+                                  float fogR, float fogG, float fogB) {
+        double cosT = Math.cos(theta);
+        double x = Math.cos(az) * cosT * radius;
+        double y = Math.sin(theta) * radius;
+        double z = Math.sin(az) * cosT * radius;
+        // t=0 na horyzoncie (kolor mgly), t=1 w zenicie (kolor nieba);
+        // pelny kolor nieba po ~35 stopniach nad horyzontem jak vanilla.
+        float t = (float) (theta / 0.62);
+        t = Math.max(0f, Math.min(1f, t));
+        float r = fogR + (skyR - fogR) * t;
+        float g = fogG + (skyG - fogG) * t;
+        float b = fogB + (skyB - fogB) * t;
+        glColor3f(r, g, b);
+        glVertex3d(x, y, z);
     }
 
     private static float[] sunriseSunset(double dayFraction) {

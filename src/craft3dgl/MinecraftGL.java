@@ -321,6 +321,9 @@ public class MinecraftGL {
     double lastSpacePressTime = -10;
     boolean spaceWasDown = false;
     boolean middleMouseWasDown = false;
+    // Debug HUD (F3) - domyslnie wylaczony, jak w vanilla nie ma stalych napisow.
+    boolean debugStats = false;
+    boolean f3WasDown = false;
 
     boolean chatOpen = false;
     boolean chatIgnoreNextChar = false;
@@ -2351,6 +2354,9 @@ public class MinecraftGL {
         for (int i = 0; i < HOTBAR_SIZE; i++) {
             if (glfwGetKey(window, GLFW_KEY_1 + i) == GLFW_PRESS) selectedSlot = i;
         }
+        boolean f3Down = glfwGetKey(window, GLFW_KEY_F3) == GLFW_PRESS;
+        if (f3Down && !f3WasDown) debugStats = !debugStats;
+        f3WasDown = f3Down;
         updateHotbarScroll();
         int attackItemId = selectedItemId();
         if (lastAttackItemId == Integer.MIN_VALUE) lastAttackItemId = attackItemId;
@@ -4877,9 +4883,11 @@ public class MinecraftGL {
             if (gameMode == GAMEMODE_SURVIVAL) drawSurvivalBars();
             drawHotbar();
             drawDamageNumbers();
-            String hud = "Mode: " + (gameMode == GAMEMODE_CREATIVE ? "Creative" : "Survival") + (flying ? "  (Flying)" : "");
-            drawText(hud, 10, 10, 0.55f);
-            drawText("FPS: " + fps, 10, 32, 0.50f);
+            if (debugStats) {
+                String hud = "Mode: " + (gameMode == GAMEMODE_CREATIVE ? "Creative" : "Survival") + (flying ? "  (Flying)" : "");
+                drawText(hud, 10, 10, 0.55f);
+                drawText("FPS: " + fps, 10, 32, 0.50f);
+            }
             if (inventoryOpen) drawInventoryUI();
             if (creativeInvOpen) drawCreativeInvUI();
             if (chestOpen) drawChestUI();
