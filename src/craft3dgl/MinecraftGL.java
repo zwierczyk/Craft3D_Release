@@ -324,6 +324,9 @@ public class MinecraftGL {
     // Debug HUD (F3) - domyslnie wylaczony, jak w vanilla nie ma stalych napisow.
     boolean debugStats = false;
     boolean f3WasDown = false;
+    // Nazwa przedmiotu nad hotbarem: vanilla pokazuje ja tylko krotko po
+    // zmianie slotu, potem znika.
+    long hotbarNameUntil = 0;
 
     boolean chatOpen = false;
     boolean chatIgnoreNextChar = false;
@@ -2351,6 +2354,7 @@ public class MinecraftGL {
             return;
         }
 
+        int slotBefore = selectedSlot;
         for (int i = 0; i < HOTBAR_SIZE; i++) {
             if (glfwGetKey(window, GLFW_KEY_1 + i) == GLFW_PRESS) selectedSlot = i;
         }
@@ -2358,6 +2362,7 @@ public class MinecraftGL {
         if (f3Down && !f3WasDown) debugStats = !debugStats;
         f3WasDown = f3Down;
         updateHotbarScroll();
+        if (selectedSlot != slotBefore) hotbarNameUntil = System.currentTimeMillis() + 1500;
         int attackItemId = selectedItemId();
         if (lastAttackItemId == Integer.MIN_VALUE) lastAttackItemId = attackItemId;
         else if (lastAttackItemId != attackItemId) {
@@ -5991,9 +5996,10 @@ public class MinecraftGL {
         }
 
         // === 9. NAZWA TRZYMANEGO PRZEDMIOTU ponad hotbarem ===
+        // Vanilla: wyswietla sie krotko po zmianie wybranego slotu i znika.
         int item = selectedItemId();
         String name = item > 0 ? itemName(item) + " x" + selectedItemCount() : "";
-        if (!name.isEmpty()) {
+        if (!name.isEmpty() && System.currentTimeMillis() < hotbarNameUntil) {
             drawCenteredText(name, width / 2, by - 22, 0.65f);
         }
     }
@@ -8046,6 +8052,7 @@ public class MinecraftGL {
                 if (inside(mx, my, sx, invY, slot, slot)) {
                     creativeClickStackSlot(invId, invCount, col);
                     selectedSlot = col;
+                    hotbarNameUntil = System.currentTimeMillis() + 1500;
                     return;
                 }
             }
@@ -8124,6 +8131,7 @@ public class MinecraftGL {
                 if (inside(mx, my, sx, invY, slot, slot)) {
                     creativeClickStackSlot(invId, invCount, col);
                     selectedSlot = col;
+                    hotbarNameUntil = System.currentTimeMillis() + 1500;
                     return;
                 }
             }
