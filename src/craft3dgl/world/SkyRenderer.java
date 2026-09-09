@@ -14,7 +14,13 @@ import static org.lwjgl.opengl.GL11.*;
 /** Fixed-function port of Minecraft 1.12 RenderGlobal.renderSky. */
 public final class SkyRenderer {
     private static int sunTexture;
-    private static int moonTexture;
+    // Fazy ksiezyca 26.2: osobne tekstury (kolejnosc jak w arkuszu 1.12).
+    private static final int[] MOON_PHASE_TEXTURES = new int[8];
+    private static final String[] MOON_PHASE_FILES = {
+        "moon/full_moon.png", "moon/waning_gibbous.png", "moon/third_quarter.png",
+        "moon/waning_crescent.png", "moon/new_moon.png", "moon/waxing_crescent.png",
+        "moon/first_quarter.png", "moon/waxing_gibbous.png"
+    };
     private static int starList;
 
     private SkyRenderer() {}
@@ -126,14 +132,10 @@ public final class SkyRenderer {
             glBindTexture(GL_TEXTURE_2D, sunTexture);
             texturedCelestialQuad(30.0, 100.0, false, 0.0, 0.0, 1.0, 1.0);
         }
-        if (moonTexture != 0) {
-            glBindTexture(GL_TEXTURE_2D, moonTexture);
+        if (MOON_PHASE_TEXTURES[0] != 0) {
             int phase = ((int)Math.floor(dayFraction) % 8 + 8) % 8;
-            int column = phase % 4;
-            int row = phase / 4;
-            double u0 = column / 4.0, v0 = row / 2.0;
-            double u1 = (column + 1) / 4.0, v1 = (row + 1) / 2.0;
-            texturedCelestialQuad(20.0, -100.0, true, u0, v0, u1, v1);
+            glBindTexture(GL_TEXTURE_2D, MOON_PHASE_TEXTURES[phase]);
+            texturedCelestialQuad(20.0, -100.0, true, 0.0, 0.0, 1.0, 1.0);
         }
 
         glDisable(GL_TEXTURE_2D);
@@ -306,7 +308,11 @@ public final class SkyRenderer {
 
     private static void ensureTextures() {
         if (sunTexture == 0) sunTexture = loadTexture("sun.png");
-        if (moonTexture == 0) moonTexture = loadTexture("moon_phases.png");
+        if (MOON_PHASE_TEXTURES[0] == 0) {
+            for (int i = 0; i < MOON_PHASE_FILES.length; i++) {
+                MOON_PHASE_TEXTURES[i] = loadTexture(MOON_PHASE_FILES[i]);
+            }
+        }
     }
 
     private static int loadTexture(String name) {
