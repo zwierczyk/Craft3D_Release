@@ -43,7 +43,15 @@ public final class CloudRenderer {
         float thunder = Math.max(0f, Math.min(1f, thunderStrength));
         float cloud = daylight * 0.9f + 0.1f;
         float grey = cloud * (1f - rain * 0.55f) * (1f - thunder * 0.65f);
-        glColor4f(grey, grey, grey, 0.8f);
+        // Vanilla: o wschodzie/zachodzie chmury nabieraja cieplego pomaranczowego
+        // tonu od slonca przy horyzoncie (cos kata celestialnego w poblizu 0).
+        float cosSun = (float) Math.cos(LightEngine.celestialAngle(dayFraction) * Math.PI * 2.0);
+        float warm = 1f - Math.abs(cosSun) / 0.4f;
+        warm = Math.max(0f, Math.min(1f, warm)) * 0.75f;
+        float r = grey * (1f - warm) + warm * 1f;
+        float g = grey * (1f - warm) + warm * 0.55f;
+        float b = grey * (1f - warm) + warm * 0.2f;
+        glColor4f(r, g, b, 0.8f);
 
         // RenderGlobal fast clouds: 32-block cells, texture scale 1/2048 and
         // movement 0.03 block per game tick (0.6 block/s).
